@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   macos:
-    runs-on: macos-14
+    runs-on: macos-latest
     env:
       # Optional signing secrets. Leave them unset for an unsigned build.
       MACOS_CERT_P12:      ${{ secrets.MACOS_CERT_P12 }}        # base64 .p12 with BOTH Developer ID certs
