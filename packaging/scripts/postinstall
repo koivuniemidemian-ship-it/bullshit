@@ -1,0 +1,4 @@
+#!/bin/sh
+# Nudge macOS to rescan Audio Units so Logic/GarageBand see Moist Boi right away.
+killall -9 AudioComponentRegistrar >/dev/null 2>&1 || true
+exit 0
