@@ -22,13 +22,14 @@ public:
 private:
     void timerCallback() override;
 
-    float hush() const;
-    int moodFor (float k) const;
-    void drawBackground (juce::Graphics&, float k);
-    void drawSpectrum (juce::Graphics&, float k);
-    void drawEffects (juce::Graphics&, float k, int mood);
-    void drawGirl (juce::Graphics&, int mood);
-    void drawBubble (juce::Graphics&, int mood);
+    float knobValue() const;
+    static int moodFor (float k);
+
+    void drawBackground (juce::Graphics&, float k, float rage);
+    void drawGirl (juce::Graphics&, int mood, float rage);
+    void drawHead (juce::Graphics&, int mood, float rage);
+    void drawPanel (juce::Graphics&, float k, int mood, float rage);
+    void drawBlood (juce::Graphics&, float k, int mood);
 
     ShizukaProcessor& proc;
     KawaiiLookAndFeel lnf;
@@ -38,7 +39,6 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> knobAttachment;
 
     std::array<float, ShizukaProcessor::numBands> bandsUI {};
-    juce::Rectangle<float> stage;
     juce::Random rng;
     float t = 0.0f, gatedUI = 0.0f;
     int tagline = 0;

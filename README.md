@@ -1,10 +1,10 @@
 # SHIZUKA 🤫
 
-A one-knob **spectral gate** for macOS (VST3 + AU, universal), run by an anime librarian who has had enough.
+A one-knob **spectral gate** for macOS (VST3 + AU, universal), run by an anime girl who starts out sweet and icy-blue and turns into a blood-soaked yandere as you turn the knob.
 
 ## The knob
 
-**SHHH-O-METER** sets the "quiet line", from off up to −10 dB. Every FFT bin below the line gets pushed down, and the push gets deeper the further you turn it. Low settings clean up hiss, hum and room tone. High settings leave only the loudest peaks, which sounds glitchy and underwater.
+**ANGER** sets the "quiet line", from off up to −10 dB. Every FFT bin below the line gets pushed down, and the push gets deeper the further you turn it. Low settings clean up hiss, hum and room tone. High settings leave only the loudest peaks, which sounds glitchy and underwater.
 
 The spectrum behind her shows what's happening. Bars under the dashed QUIET LINE are greyed out because they're being silenced.
 
@@ -12,13 +12,11 @@ The spectrum behind her shows what's happening. Bars under the dashed QUIET LINE
 
 | Knob | Mood |
 |---|---|
-| off | dozing, zzz |
-| low | polite "shh~" with a cat smile |
-| mid | unimpressed half-lidded stare and a sweat drop |
-| high | anger vein, glinting glasses, speed lines, shouting |
-| max | **SILENCE.** Opaque glowing glasses, rage aura, fangs, screen shake |
-
-Her mouth gets bigger the more sound she's removing.
+| off | serene, eyes closed, everything blue and sparkly |
+| low | sweet smile, "hehe, shh~" |
+| mid | pouting, "...hey. too loud." |
+| high | yandere: shadowed eyes, empty pupils, blood on her cheek and sweater, drips from the top of the screen |
+| max | **SILENCE.** Glowing red eyes, crazy grin, blood rain, splatters everywhere, screen shake |
 
 ## Tech
 
