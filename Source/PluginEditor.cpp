@@ -1,5 +1,4 @@
 #include "PluginEditor.h"
-#include "Girl.h"
 #include "AnimeBlood.h"
 #include <cmath>
 
@@ -15,7 +14,7 @@ namespace
     constexpr float pi = juce::MathConstants<float>::pi;
 
     // Character geometry inside the left 440 px "stage"
-    constexpr float CX = HushGirl::CX, HY = HushGirl::HY;
+    constexpr float CX = 220.0f, HY = 260.0f;
     constexpr float W  = 700.0f, H = 740.0f;
 
     const Colour ink     { 0xff2a1d3a };
@@ -340,11 +339,19 @@ ShizukaEditor::ShizukaEditor (ShizukaProcessor& p)
     addAndMakeVisible (knobLabel);
 
 #if defined (HUSH_HAS_ART)
-    int size = 0;
-    if (auto* d = BinaryData::getNamedResource ("girl_calm_png", size))
-        artCalm = juce::ImageCache::getFromMemory (d, size);
-    if (auto* d = BinaryData::getNamedResource ("girl_rage_png", size))
-        artRage = juce::ImageCache::getFromMemory (d, size);
+    auto load = [] (const char* name)
+    {
+        int size = 0;
+        if (auto* d = BinaryData::getNamedResource (name, size))
+            return juce::ImageCache::getFromMemory (d, size);
+        return juce::Image();
+    };
+    sky[0] = load ("sky_calm_jpg");             sky[1] = load ("sky_rage_jpg");
+    mountains[0] = load ("mountains_calm_png"); mountains[1] = load ("mountains_rage_png");
+    girl[0] = load ("girl_calm_png");           girl[1] = load ("girl_rage_png");
+    moonImg = load ("moon_png");
+    for (int i = 0; i < 6; ++i) splats[(size_t) i] = load (("splat" + juce::String (i) + "_png").toRawUTF8());
+    for (int i = 0; i < 3; ++i) drips[(size_t) i]  = load (("drip" + juce::String (i) + "_png").toRawUTF8());
 #endif
 
     for (auto& b : bandsUI)
@@ -401,22 +408,18 @@ void ShizukaEditor::paint (juce::Graphics& g)
     const int mood = moodFor (k);
     const float rage = smoothstep (0.3f, 0.9f, k);
 
-    drawSky (g, k, rage);
+    const juce::Rectangle<float> full (0.0f, 0.0f, W, H);
+    g.fillAll (juce::Colours::black);
+    drawLayer (g, sky[0], sky[1], rage, full);
     drawMoon (g, k);
-    drawClouds (g, 0, rage);
-    drawMountains (g, rage);
-    drawClouds (g, 1, rage);
+    drawLayer (g, mountains[0], mountains[1], rage, full);
     drawCritters (g, rage);
 
     {
         juce::Graphics::ScopedSaveState save (g);
         if (mood == 4)
             g.addTransform (juce::AffineTransform::translation ((rng.nextFloat() - 0.5f) * 7.0f, (rng.nextFloat() - 0.5f) * 7.0f));
-
-        if (artCalm.isValid())
-            drawArt (g, rage);
-        else
-            drawGirl (g, mood, rage);
+        drawGirl (g, mood, rage);
     }
 
     drawPanel (g, k, mood, rage);
@@ -426,175 +429,90 @@ void ShizukaEditor::paint (juce::Graphics& g)
 //==============================================================================
 //  Background: sky -> blood moon, clouds, mountains
 //==============================================================================
-void ShizukaEditor::drawSky (juce::Graphics& g, float k, float rage)
+void ShizukaEditor::drawLayer (juce::Graphics& g, const juce::Image& calm, const juce::Image& angry, float rage, juce::Rectangle<float> dest)
 {
-    juce::ColourGradient sky (mix (Colour (0xff2a63d0), Colour (0xff060002), rage), 0.0f, 0.0f,
-                              mix (Colour (0xffffe6d6), Colour (0xffd0201a), rage), 0.0f, 480.0f, false);
-    sky.addColour (0.55, mix (Colour (0xff86bdf5), Colour (0xff4a0010), rage));
-    g.setGradientFill (sky);
-    g.fillAll();
-
-    const float starA = smoothstep (0.35f, 0.8f, k);
-    if (starA > 0.0f)
+    const auto fill = juce::RectanglePlacement (juce::RectanglePlacement::stretchToFit);
+    if (calm.isValid() && rage < 0.999f)
     {
-        juce::Random sr (11);
-        for (int i = 0; i < 90; ++i)
-        {
-            const float x = sr.nextFloat() * W, y = sr.nextFloat() * 330.0f;
-            const float tw = 0.5f + 0.5f * std::sin (t * (1.0f + sr.nextFloat() * 3.0f) + (float) i);
-            const float s = 1.0f + sr.nextFloat() * 1.8f;
-            g.setColour ((i % 4 == 0 ? Colour (0xffff8080) : juce::Colours::white).withAlpha (starA * tw));
-            g.fillEllipse (x, y, s, s);
-        }
+        g.setOpacity (1.0f);
+        g.drawImage (calm, dest, fill);
     }
-
-    const float calm = 1.0f - rage;
-    if (calm > 0.0f)
+    if (angry.isValid() && rage > 0.001f)
     {
-        g.setGradientFill (juce::ColourGradient (Colour (0xfffff6d8).withAlpha (0.8f * calm), 560.0f, 90.0f,
-                                                 Colour (0x00fff6d8), 780.0f, 90.0f, true));
-        g.fillEllipse (340.0f, -130.0f, 440.0f, 440.0f);
+        g.setOpacity (rage);
+        g.drawImage (angry, dest, fill);
     }
+    g.setOpacity (1.0f);
 }
 
 void ShizukaEditor::drawMoon (juce::Graphics& g, float k)
 {
     const float rise = smoothstep (0.25f, 0.85f, k);
-    if (rise <= 0.001f)
+    if (rise <= 0.001f || ! moonImg.isValid())
         return;
+    const float size = 360.0f;
+    const float mx = CX, my = 560.0f - 330.0f * rise;
+    g.setOpacity (juce::jmin (1.0f, rise * 2.0f));
+    g.drawImage (moonImg, juce::Rectangle<float> (mx - size * 0.5f, my - size * 0.5f, size, size));
+    g.setOpacity (1.0f);
 
-    const float mr = 150.0f;
-    const float mx = CX, my = 640.0f - 420.0f * rise;
-
-    for (int i = 6; i >= 1; --i)
-    {
-        const float gr = mr * (1.0f + 0.32f * (float) i);
-        g.setColour (Colour (0xffff2a1a).withAlpha (0.055f * rise));
-        g.fillEllipse (mx - gr, my - gr, gr * 2.0f, gr * 2.0f);
-    }
-
-    juce::ColourGradient disc (Colour (0xffff7a4a), mx - mr * 0.25f, my - mr * 0.3f, Colour (0xff6a0008), mx + mr, my + mr, true);
-    disc.addColour (0.55, Colour (0xffd0141e));
-    g.setGradientFill (disc);
-    g.fillEllipse (mx - mr, my - mr, mr * 2.0f, mr * 2.0f);
-
-    juce::Random cr (3);
-    for (int i = 0; i < 14; ++i)
-    {
-        const float a = cr.nextFloat() * 2.0f * pi, d = cr.nextFloat() * mr * 0.8f;
-        const float s = mr * (0.06f + 0.18f * cr.nextFloat());
-        g.setColour (Colour (0xff4a0008).withAlpha (0.28f));
-        g.fillEllipse (mx + std::cos (a) * d - s, my + std::sin (a) * d - s * 0.8f, s * 2.0f, s * 1.6f);
-        g.setColour (Colour (0xffff9a7a).withAlpha (0.18f));
-        g.drawEllipse (mx + std::cos (a) * d - s, my + std::sin (a) * d - s * 0.8f, s * 2.0f, s * 1.6f, 1.0f);
-    }
-    g.setColour (Colour (0xff3a0004).withAlpha (0.8f));
-    g.drawEllipse (mx - mr, my - mr, mr * 2.0f, mr * 2.0f, 3.0f);
-
-    const float bleed = smoothstep (0.6f, 1.0f, k);
+    const float bleed = smoothstep (0.6f, 1.0f, k);   // the moon bleeds
     if (bleed > 0.0f)
     {
         juce::Random dr (8);
+        const float mr = size * 0.32f;
         for (int i = 0; i < 9; ++i)
         {
             const float a = pi * (0.15f + 0.7f * dr.nextFloat());
-            const float x = mx + std::cos (a) * mr * 0.96f, y = my + std::sin (a) * mr * 0.96f;
-            const float wv = 5.0f + 7.0f * dr.nextFloat();
             const float len = bleed * (40.0f + 180.0f * dr.nextFloat()) * (0.94f + 0.06f * std::sin (t * 1.3f + (float) i));
-            AnimeBlood::drip (g, x, y - 6.0f, len + 6.0f, wv);
+            drawDrip (g, i % 3, mx + std::cos (a) * mr, my + std::sin (a) * mr - 4.0f, len, 9.0f + 6.0f * dr.nextFloat());
         }
     }
 }
 
-void ShizukaEditor::drawClouds (juce::Graphics& g, int layer, float rage)
+void ShizukaEditor::drawSprite (juce::Graphics& g, const juce::Image& img, float cx, float cy, float size, float angle, float alpha)
 {
-    const int n = layer == 0 ? 7 : 5;
-    const float scale = layer == 0 ? 26.0f : 46.0f;
-    const float speed = layer == 0 ? 4.0f : 9.0f;
-    juce::Random cr (layer == 0 ? 51 : 52);
-
-    const auto top = mix (juce::Colours::white, Colour (0xff4a0a14), rage);
-    const auto bot = mix (layer == 0 ? Colour (0xffcfdcf7) : Colour (0xffb9c6ee), Colour (0xff12000a), rage);
-    const auto rim = mix (Colour (0xfffff4e0), Colour (0xffff3020), rage).withAlpha (layer == 0 ? 0.6f : 0.85f);
-
-    for (int i = 0; i < n; ++i)
-    {
-        const float span = W + 360.0f;
-        const float x = std::fmod (cr.nextFloat() * span + t * speed * (0.7f + 0.6f * cr.nextFloat()), span) - 180.0f;
-        const float y = layer == 0 ? 50.0f + cr.nextFloat() * 220.0f : 250.0f + cr.nextFloat() * 160.0f;
-        const float s = scale * (0.75f + 0.6f * cr.nextFloat());
-        drawCloud (g, x, y, s, top, bot, rim, 0.35f * (1.0f - rage));
-    }
+    if (! img.isValid())
+        return;
+    const float sc = size / (float) img.getWidth();
+    g.setOpacity (alpha);
+    g.drawImageTransformed (img, juce::AffineTransform::translation (-(float) img.getWidth() * 0.5f, -(float) img.getHeight() * 0.5f)
+                                     .scaled (sc).rotated (angle).translated (cx, cy));
+    g.setOpacity (1.0f);
 }
 
-void ShizukaEditor::drawMountains (juce::Graphics& g, float rage)
+void ShizukaEditor::drawDrip (juce::Graphics& g, int which, float x, float topY, float len, float width)
 {
-    struct Layer { float base, amp, f1, p1, f2, p2; Colour calm, angry; };
-    const Layer layers[] = {
-        { 430.0f, 170.0f, 0.011f, 0.6f, 0.023f, 2.1f, Colour (0xffa6c0ea), Colour (0xff3a0710) },
-        { 490.0f, 120.0f, 0.015f, 2.4f, 0.031f, 0.3f, Colour (0xff6c8fc9), Colour (0xff22040a) },
-        { 560.0f,  70.0f, 0.009f, 1.1f, 0.021f, 4.0f, Colour (0xff5d9a72), Colour (0xff120205) },
-    };
+    const auto& img = drips[(size_t) (which % 3)];
+    if (! img.isValid() || len <= 1.0f)
+        return;
+    const float aspect = (float) img.getHeight() / (float) img.getWidth();
+    const float w = width * 2.0f;
+    const float h = juce::jmax (w * aspect, len + 12.0f);
+    juce::Graphics::ScopedSaveState s (g);
+    g.reduceClipRegion (juce::Rectangle<float> (x - w, topY, w * 2.0f, len + 20.0f).toNearestInt());
+    g.drawImage (img, juce::Rectangle<float> (x - w * 0.5f, topY + len + 12.0f - h, w, h), juce::RectanglePlacement::stretchToFit);
+}
 
-    for (int li = 0; li < 3; ++li)
+void ShizukaEditor::drawGirl (juce::Graphics& g, int mood, float rage)
+{
+    const juce::Rectangle<float> stage (0.0f, 0.0f, 440.0f, H);
+    const float breath = 1.0f + 0.004f * std::sin (t * 1.6f);
+    juce::Graphics::ScopedSaveState s (g);
+    g.addTransform (juce::AffineTransform::scale (breath, breath, 220.0f, H));
+    drawLayer (g, girl[0], girl[1], rage, stage);
+
+    if (mood >= 3)   // blood soaking into her hair and dress
     {
-        const auto& L = layers[li];
-        Path m;
-        m.startNewSubPath (0.0f, H);
-        for (float x = 0.0f; x <= W; x += 4.0f)
-            m.lineTo (x, ridge (x, L.base, L.amp, L.f1, L.p1, L.f2, L.p2));
-        m.lineTo (W, H);
-        m.closeSubPath();
-
-        const auto col = mix (L.calm, L.angry, rage);
-        g.setGradientFill (juce::ColourGradient (col.brighter (0.15f), 0.0f, L.base - L.amp, col.darker (0.25f), 0.0f, L.base + 60.0f, false));
-        g.fillPath (m);
-
+        juce::Random st (404);
+        const int n = (int) (rage * 14.0f);
+        for (int i = 0; i < n; ++i)
         {
-            juce::Graphics::ScopedSaveState clip (g);
-            g.reduceClipRegion (m);
-
-            if (li < 2)   // snow caps that turn to blood
-            {
-                const auto cap = mix (juce::Colours::white, Colour (0xffb0101a), rage);
-                g.setGradientFill (juce::ColourGradient (cap.withAlpha (0.95f), 0.0f, L.base - L.amp * 1.05f,
-                                                         cap.withAlpha (0.0f), 0.0f, L.base - L.amp * 0.5f, false));
-                g.fillRect (0.0f, 0.0f, W, L.base);
-            }
-
-            g.setColour (juce::Colours::black.withAlpha (0.12f));   // shadow facets
-            for (float x = 20.0f; x < W; x += 70.0f)
-            {
-                Path facet;
-                const float py = ridge (x, L.base, L.amp, L.f1, L.p1, L.f2, L.p2);
-                facet.addTriangle (x, py, x + 40.0f, H, x - 10.0f, H);
-                g.fillPath (facet);
-            }
-
-            if (li == 2)   // flowers on the near hill
-            {
-                const Colour fl[] = { Colour (0xffff8fc8), Colour (0xfffff07a), Colour (0xffffffff), Colour (0xffb08cff) };
-                juce::Random fr (77);
-                for (int i = 0; i < 70; ++i)
-                {
-                    const float x = fr.nextFloat() * W;
-                    const float y = ridge (x, L.base, L.amp, L.f1, L.p1, L.f2, L.p2) + 6.0f + fr.nextFloat() * 120.0f;
-                    g.setColour (mix (fl[i % 4], Colour (0xff8a000e), rage).withAlpha (0.9f));
-                    g.fillEllipse (x, y, 4.0f, 4.0f);
-                }
-            }
-        }
-
-        if (rage > 0.0f)   // moon-lit red rim
-        {
-            Path edge;
-            for (float x = 0.0f; x <= W; x += 4.0f)
-            {
-                const float y = ridge (x, L.base, L.amp, L.f1, L.p1, L.f2, L.p2);
-                if (x == 0.0f) edge.startNewSubPath (x, y); else edge.lineTo (x, y);
-            }
-            g.setColour (Colour (0xffff3020).withAlpha (0.6f * rage));
-            g.strokePath (edge, juce::PathStrokeType (2.0f));
+            const float x = 220.0f + (st.nextFloat() - 0.5f) * 210.0f;
+            const float y = 300.0f + st.nextFloat() * 380.0f;
+            drawSprite (g, splats[(size_t) (i % 6)], x, y, 40.0f + 70.0f * st.nextFloat(), st.nextFloat() * 6.28f, 0.95f);
+            if (st.nextFloat() < 0.5f)
+                drawDrip (g, i, x, y, rage * (20.0f + 60.0f * st.nextFloat()), 5.0f);
         }
     }
 }
@@ -632,40 +550,8 @@ void ShizukaEditor::drawCritters (juce::Graphics& g, float rage)
 }
 
 //==============================================================================
-//  Custom artwork (art/girl_calm.png, art/girl_rage.png)
-//==============================================================================
-void ShizukaEditor::drawArt (juce::Graphics& g, float rage)
-{
-    const juce::Rectangle<float> dest (0.0f, 30.0f, 440.0f, 710.0f);
-    const juce::RectanglePlacement place (juce::RectanglePlacement::centred | juce::RectanglePlacement::onlyReduceInSize);
-
-    if (artRage.isValid())
-    {
-        g.setOpacity (1.0f - rage);
-        g.drawImage (artCalm, dest, place);
-        g.setOpacity (rage);
-        g.drawImage (artRage, dest, place);
-        g.setOpacity (1.0f);
-    }
-    else
-    {
-        g.setOpacity (1.0f);
-        g.drawImage (artCalm, dest, place);
-        if (rage > 0.0f)   // tint the calm art blood-red using its alpha as a mask
-        {
-            g.setColour (Colour (0xffc0001a).withAlpha (rage * 0.55f));
-            g.drawImage (artCalm, dest, place, true);
-        }
-    }
-}
-
-//==============================================================================
 //  The character (see Girl.cpp)
 //==============================================================================
-void ShizukaEditor::drawGirl (juce::Graphics& g, int mood, float rage)
-{
-    HushGirl::draw (g, t, mood, rage, gatedUI);
-}
 
 //==============================================================================
 void ShizukaEditor::drawPanel (juce::Graphics& g, float k, int mood, float rage)
@@ -785,7 +671,7 @@ void ShizukaEditor::drawBlood (juce::Graphics& g, float k, int mood)
         const float x = W * ((float) i + 0.5f) / (float) drips + (dr.nextFloat() - 0.5f) * 18.0f;
         const float wv = 5.0f + dr.nextFloat() * 14.0f;
         const float len = H * 0.42f * amount * (0.12f + 0.88f * dr.nextFloat()) * (0.92f + 0.08f * std::sin (t * 1.5f + (float) i));
-        AnimeBlood::drip (g, x, -10.0f, len + 10.0f, wv);
+        drawDrip (g, i, x, -12.0f, len + 12.0f, wv);
     }
 
     Path band;   // wavy pooled band along the top
@@ -794,7 +680,7 @@ void ShizukaEditor::drawBlood (juce::Graphics& g, float k, int mood)
         band.lineTo (x, (8.0f + 22.0f * amount) + 6.0f * std::sin (x * 0.05f + t));
     band.lineTo (W, 0.0f);
     band.closeSubPath();
-    g.setColour (AnimeBlood::red);
+    g.setColour (Colour (0xff6a0010));
     g.fillPath (band);
     g.setColour (AnimeBlood::dark);
     g.strokePath (band, juce::PathStrokeType (3.0f));
@@ -813,17 +699,19 @@ void ShizukaEditor::drawBlood (juce::Graphics& g, float k, int mood)
         }
     }
 
-    const int splats = (int) (amount * 34.0f);   // splatters everywhere (her face stays visible)
+    const int numSplats = (int) (amount * 30.0f);   // splatters everywhere
     juce::Random sr (1234);
     const juce::Rectangle<float> faceZone (CX - 120.0f, HY - 120.0f, 240.0f, 240.0f);
-    for (int i = 0; i < splats; ++i)
+    for (int i = 0; i < numSplats; ++i)
     {
         const float x = sr.nextFloat() * W, y = sr.nextFloat() * H;
         if (faceZone.contains (x, y) || juce::Rectangle<float> (455.0f, 255.0f, 225.0f, 130.0f).contains (x, y))
             continue;
         const float r = 8.0f + sr.nextFloat() * 40.0f;
         const float drip = sr.nextFloat() < 0.4f ? amount * (20.0f + 60.0f * sr.nextFloat()) : 0.0f;
-        paintSplat (g, x, y, r, 500 + i, 0.93f, drip);
+        drawSprite (g, splats[(size_t) (i % 6)], x, y, r * 4.0f, sr.nextFloat() * 6.28f, 0.95f);
+        if (drip > 0.0f)
+            drawDrip (g, i, x, y, drip, juce::jmax (4.0f, r * 0.35f));
     }
 
     if (mood >= 3)   // blood rain
@@ -859,7 +747,7 @@ void ShizukaEditor::drawBlood (juce::Graphics& g, float k, int mood)
         inner.closeSubPath();
         frame.addPath (inner);
         frame.setUsingNonZeroWinding (false);
-        g.setColour (AnimeBlood::red.withAlpha (0.92f));
+        g.setColour (Colour (0xff5a000c).withAlpha (0.92f));
         g.fillPath (frame);
         g.setColour (AnimeBlood::dark);
         g.strokePath (inner, juce::PathStrokeType (3.0f));
