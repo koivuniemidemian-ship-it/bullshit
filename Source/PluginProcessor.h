@@ -4,12 +4,22 @@
 #include <juce_dsp/juce_dsp.h>
 #include <array>
 #include <atomic>
+#include <vector>
 
-class MoistBoiProcessor : public juce::AudioProcessor
+// SHIZUKA: a one-knob spectral gate. Each FFT bin that falls below the
+// threshold gets pushed down, so noise, room tone and reverb tails vanish
+// while the loud parts stay.
+class ShizukaProcessor : public juce::AudioProcessor
 {
 public:
-    MoistBoiProcessor();
-    ~MoistBoiProcessor() override = default;
+    static constexpr int fftOrder = 11;
+    static constexpr int fftSize  = 1 << fftOrder;   // 2048
+    static constexpr int hop      = fftSize / 4;     // 75% overlap
+    static constexpr int numBins  = fftSize / 2 + 1;
+    static constexpr int numBands = 48;              // for the UI spectrum
+
+    ShizukaProcessor();
+    ~ShizukaProcessor() override = default;
 
     void prepareToPlay (double sampleRate, int samplesPerBlock) override;
     void releaseResources() override {}
@@ -37,38 +47,33 @@ public:
     void setStateInformation (const void* data, int sizeInBytes) override;
 
     static juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
+    static float thresholdDbFor (float hush) noexcept { return -90.0f + 80.0f * hush; }
 
     juce::AudioProcessorValueTreeState apvts;
 
-    // Peak output level, read by the UI so the blob's mouth can flap.
+    // Values read by the editor
+    std::array<std::atomic<float>, numBands> bands;   // input spectrum, dB
+    std::atomic<float> gatedAmount { 0.0f };           // 0..1 share of energy removed
     std::atomic<float> outputLevel { 0.0f };
 
 private:
-    struct ChannelState
+    struct Channel
     {
-        float crushHold = 0.0f, crushPhase = 0.0f;
-        float lp1 = 0.0f, lp2 = 0.0f;
-        float dcX = 0.0f, dcY = 0.0f;
+        std::vector<float> in, out, gain;
+        int idx = 0;
     };
 
-    std::atomic<float>* moistureP = nullptr;
-    std::atomic<float>* stankP    = nullptr;
-    std::atomic<float>* crustP    = nullptr;
-    std::atomic<float>* gunkP     = nullptr;
-    std::atomic<float>* oozeP     = nullptr;
-    std::atomic<float>* volumeP   = nullptr;
-    std::atomic<float>* squelchP  = nullptr;
+    void processFrame (Channel& ch, float hush, bool analyse);
 
-    // 2^2 = 4x oversampling around the nonlinear stage
-    juce::dsp::Oversampling<float> oversampling { 2, 2,
-        juce::dsp::Oversampling<float>::filterHalfBandPolyphaseIIR, true, true };
+    std::atomic<float>* hushP = nullptr;
 
-    juce::dsp::DryWetMixer<float> mixer { 64 };
-    juce::SmoothedValue<float> outGain;
-    std::array<ChannelState, 2> chans;
+    juce::dsp::FFT fft { fftOrder };
+    std::vector<float> window, fftData, rawGain, mags;
+    std::vector<int> bandEdges;
+    std::array<Channel, 2> chans;
 
-    float lastDrive = 1.0f, lastStank = 0.0f;
+    float magNorm = 1.0f, synthScale = 0.5f;
     double sr = 44100.0;
 
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MoistBoiProcessor)
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ShizukaProcessor)
 };

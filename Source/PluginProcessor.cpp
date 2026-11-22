@@ -1,73 +1,61 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include <algorithm>
 #include <cmath>
 
-namespace
-{
-    juce::String percent (float v, int) { return juce::String (juce::roundToInt (v * 100.0f)) + "%"; }
-
-    // The core "goo" waveshaper: biased (asymmetric) tanh, a sine wavefolder
-    // that fades in with STANK, and an optional rectifier fuzz (SQUELCH).
-    inline float goo (float x, float drive, float stank, bool squelch) noexcept
-    {
-        const float bias = stank * 0.7f;
-        float y = std::tanh (x * drive + bias) - std::tanh (bias);
-
-        const float foldGain = 1.0f + stank * 5.0f;
-        const float folded   = std::sin (y * foldGain * juce::MathConstants<float>::halfPi);
-        y += stank * stank * (folded - y);
-
-        if (squelch)
-        {
-            const float r = std::abs (y) * 1.8f - 0.6f;   // full-wave rectify = octave-up nastiness
-            y = 0.35f * y + 0.65f * std::tanh (r * 2.0f);
-        }
-        return y;
-    }
-}
-
-MoistBoiProcessor::MoistBoiProcessor()
+ShizukaProcessor::ShizukaProcessor()
     : AudioProcessor (BusesProperties()
                         .withInput  ("Input",  juce::AudioChannelSet::stereo(), true)
                         .withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
       apvts (*this, nullptr, "PARAMS", createLayout())
 {
-    moistureP = apvts.getRawParameterValue ("moisture");
-    stankP    = apvts.getRawParameterValue ("stank");
-    crustP    = apvts.getRawParameterValue ("crust");
-    gunkP     = apvts.getRawParameterValue ("gunk");
-    oozeP     = apvts.getRawParameterValue ("ooze");
-    volumeP   = apvts.getRawParameterValue ("volume");
-    squelchP  = apvts.getRawParameterValue ("squelch");
+    hushP = apvts.getRawParameterValue ("hush");
+
+    for (auto& b : bands)
+        b.store (-100.0f);
+
+    // sqrt-Hann for analysis and synthesis: Hann^2 overlap-added at 75% sums to 2
+    window.resize ((size_t) fftSize);
+    float wsum = 0.0f;
+    for (int n = 0; n < fftSize; ++n)
+    {
+        window[(size_t) n] = std::sqrt (0.5f - 0.5f * std::cos (juce::MathConstants<float>::twoPi * (float) n / (float) fftSize));
+        wsum += window[(size_t) n];
+    }
+    magNorm = 2.0f / wsum;
+
+    fftData.assign ((size_t) (2 * fftSize), 0.0f);
+    rawGain.assign ((size_t) numBins, 1.0f);
+    mags.assign ((size_t) numBins, 0.0f);
+
+    // Measure the FFT round-trip gain so we don't depend on backend scaling conventions
+    std::vector<float> test ((size_t) (2 * fftSize), 0.0f);
+    std::copy (window.begin(), window.end(), test.begin());
+    fft.performRealOnlyForwardTransform (test.data());
+    fft.performRealOnlyInverseTransform (test.data());
+    const float got = test[(size_t) fftSize / 2];
+    const float ifftScale = std::abs (got) > 1.0e-9f ? window[(size_t) fftSize / 2] / got : 1.0f;
+    synthScale = ifftScale * 0.5f;
 }
 
-juce::AudioProcessorValueTreeState::ParameterLayout MoistBoiProcessor::createLayout()
+juce::AudioProcessorValueTreeState::ParameterLayout ShizukaProcessor::createLayout()
 {
     using namespace juce;
     std::vector<std::unique_ptr<RangedAudioParameter>> p;
 
-    auto pct = AudioParameterFloatAttributes().withStringFromValueFunction (percent);
+    auto attrs = AudioParameterFloatAttributes().withStringFromValueFunction ([] (float v, int)
+    {
+        if (v < 0.001f) return String ("off");
+        return String (thresholdDbFor (v), 1) + " dB";
+    });
 
-    p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { "moisture", 1 }, "Moisture",
-                    NormalisableRange<float> (0.0f, 48.0f, 0.01f), 18.0f,
-                    AudioParameterFloatAttributes().withLabel ("dB")));
-    p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { "stank", 1 }, "Stank",
-                    NormalisableRange<float> (0.0f, 1.0f, 0.001f), 0.3f, pct));
-    p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { "crust", 1 }, "Crust",
-                    NormalisableRange<float> (0.0f, 1.0f, 0.001f), 0.0f, pct));
-    p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { "gunk", 1 }, "Gunk",
-                    NormalisableRange<float> (0.0f, 1.0f, 0.001f), 0.25f, pct));
-    p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { "ooze", 1 }, "Ooze",
-                    NormalisableRange<float> (0.0f, 1.0f, 0.001f), 1.0f, pct));
-    p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { "volume", 1 }, "Volume",
-                    NormalisableRange<float> (-24.0f, 12.0f, 0.01f), -6.0f,
-                    AudioParameterFloatAttributes().withLabel ("dB")));
-    p.push_back (std::make_unique<AudioParameterBool> (ParameterID { "squelch", 1 }, "Squelch", false));
+    p.push_back (std::make_unique<AudioParameterFloat> (ParameterID { "hush", 1 }, "Hush",
+                    NormalisableRange<float> (0.0f, 1.0f, 0.001f), 0.0f, attrs));
 
     return { p.begin(), p.end() };
 }
 
-bool MoistBoiProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
+bool ShizukaProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
 {
     const auto out = layouts.getMainOutputChannelSet();
     if (out != juce::AudioChannelSet::mono() && out != juce::AudioChannelSet::stereo())
@@ -75,32 +63,108 @@ bool MoistBoiProcessor::isBusesLayoutSupported (const BusesLayout& layouts) cons
     return layouts.getMainInputChannelSet() == out;
 }
 
-void MoistBoiProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
+void ShizukaProcessor::prepareToPlay (double sampleRate, int)
 {
     sr = sampleRate;
-    juce::dsp::ProcessSpec spec { sampleRate, (juce::uint32) samplesPerBlock, 2 };
-
-    oversampling.reset();
-    oversampling.initProcessing ((size_t) samplesPerBlock);
-
-    const int latency = (int) std::round (oversampling.getLatencyInSamples());
-    setLatencySamples (latency);
-
-    mixer.prepare (spec);
-    mixer.reset();
-    mixer.setWetLatency ((float) latency);
-
-    outGain.reset (sampleRate, 0.05);
-    outGain.setCurrentAndTargetValue (juce::Decibels::decibelsToGain (volumeP->load()));
-
-    lastDrive = juce::Decibels::decibelsToGain (moistureP->load());
-    lastStank = stankP->load();
+    setLatencySamples (fftSize);
 
     for (auto& c : chans)
-        c = {};
+    {
+        c.in.assign ((size_t) fftSize, 0.0f);
+        c.out.assign ((size_t) fftSize, 0.0f);
+        c.gain.assign ((size_t) numBins, 1.0f);
+        c.idx = 0;
+    }
+
+    bandEdges.assign ((size_t) numBands + 1, 1);
+    for (int b = 0; b <= numBands; ++b)
+    {
+        const double f = 40.0 * std::pow (18000.0 / 40.0, (double) b / (double) numBands);
+        int bin = juce::jlimit (1, numBins - 1, (int) std::round (f * fftSize / sr));
+        if (b > 0 && bin <= bandEdges[(size_t) b - 1])
+            bin = juce::jmin (numBins - 1, bandEdges[(size_t) b - 1] + 1);
+        bandEdges[(size_t) b] = bin;
+    }
 }
 
-void MoistBoiProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
+void ShizukaProcessor::processFrame (Channel& ch, float hush, bool analyse)
+{
+    std::fill (fftData.begin(), fftData.end(), 0.0f);
+    for (int n = 0; n < fftSize; ++n)
+        fftData[(size_t) n] = ch.in[(size_t) n] * window[(size_t) n];
+
+    fft.performRealOnlyForwardTransform (fftData.data());
+
+    const bool active  = hush > 0.001f;
+    const float thresh = thresholdDbFor (hush);
+    const float knee   = 6.0f;
+    const float floorG = juce::Decibels::decibelsToGain (-80.0f * hush);
+
+    for (int b = 0; b < numBins; ++b)
+    {
+        const float re = fftData[(size_t) (2 * b)], im = fftData[(size_t) (2 * b + 1)];
+        const float mag = std::sqrt (re * re + im * im) * magNorm;
+        mags[(size_t) b] = mag;
+
+        float g = 1.0f;
+        if (active)
+        {
+            const float db = 20.0f * std::log10 (mag + 1.0e-9f);
+            const float t = juce::jlimit (0.0f, 1.0f, (db - (thresh - knee)) / knee);
+            g = floorG + (1.0f - floorG) * t;
+        }
+        rawGain[(size_t) b] = g;
+    }
+
+    float inE = 0.0f, outE = 0.0f;
+    for (int b = 0; b < numBins; ++b)
+    {
+        // Smooth across neighbouring bins and over time to cut down "musical noise"
+        const float sm = 0.25f * rawGain[(size_t) juce::jmax (b - 1, 0)]
+                       + 0.50f * rawGain[(size_t) b]
+                       + 0.25f * rawGain[(size_t) juce::jmin (b + 1, numBins - 1)];
+        float& gs = ch.gain[(size_t) b];
+        gs += (sm - gs) * (sm > gs ? 0.7f : 0.2f);
+
+        fftData[(size_t) (2 * b)]     *= gs;
+        fftData[(size_t) (2 * b + 1)] *= gs;
+
+        const float m = mags[(size_t) b];
+        inE  += m * m;
+        outE += m * m * gs * gs;
+    }
+    // Mirror onto the negative-frequency half in case the backend reads it
+    for (int b = numBins; b < fftSize; ++b)
+    {
+        const float gs = ch.gain[(size_t) (fftSize - b)];
+        fftData[(size_t) (2 * b)]     *= gs;
+        fftData[(size_t) (2 * b + 1)] *= gs;
+    }
+
+    if (analyse)
+    {
+        for (int i = 0; i < numBands; ++i)
+        {
+            const int lo = bandEdges[(size_t) i];
+            const int hi = juce::jmax (lo + 1, bandEdges[(size_t) i + 1]);
+            float mx = 0.0f;
+            for (int b = lo; b < hi && b < numBins; ++b)
+                mx = juce::jmax (mx, mags[(size_t) b]);
+            bands[(size_t) i].store (20.0f * std::log10 (mx + 1.0e-9f));
+        }
+        const float amount = inE > 1.0e-10f ? juce::jlimit (0.0f, 1.0f, 1.0f - outE / inE) : 0.0f;
+        gatedAmount.store (gatedAmount.load() * 0.7f + amount * 0.3f);
+    }
+
+    fft.performRealOnlyInverseTransform (fftData.data());
+
+    std::copy (ch.out.begin() + hop, ch.out.end(), ch.out.begin());
+    std::fill (ch.out.end() - hop, ch.out.end(), 0.0f);
+    for (int n = 0; n < fftSize; ++n)
+        ch.out[(size_t) n] += fftData[(size_t) n] * window[(size_t) n] * synthScale;
+}
+
+void ShizukaProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
 {
     juce::ScopedNoDenormals noDenormals;
 
@@ -110,101 +174,43 @@ void MoistBoiProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
         buffer.clear (c, 0, numSamples);
 
     const int numCh = juce::jmin (numIn, 2);
-    if (numCh == 0 || numSamples == 0)
-        return;
-
-    const float driveTarget = juce::Decibels::decibelsToGain (moistureP->load());
-    const float stankTarget = stankP->load();
-    const float crust       = crustP->load();
-    const float gunk        = gunkP->load();
-    const bool  squelch     = squelchP->load() > 0.5f;
-    outGain.setTargetValue (juce::Decibels::decibelsToGain (volumeP->load()));
-
-    juce::dsp::AudioBlock<float> block (buffer);
-    auto io = block.getSubsetChannelBlock (0, (size_t) numCh);
-
-    mixer.setWetMixProportion (oozeP->load());
-    mixer.pushDrySamples (io);
-
-    // ---- Oversampled nonlinear stage ------------------------------------
-    {
-        auto up = oversampling.processSamplesUp (io);
-        const int upN = (int) up.getNumSamples();
-        const float d0 = lastDrive, s0 = lastStank;
-
-        for (size_t c = 0; c < up.getNumChannels(); ++c)
-        {
-            float* x = up.getChannelPointer (c);
-            for (int i = 0; i < upN; ++i)
-            {
-                const float t = (float) (i + 1) / (float) upN;   // linear ramp = zipper-free knob moves
-                x[i] = goo (x[i], d0 + (driveTarget - d0) * t, s0 + (stankTarget - s0) * t, squelch);
-            }
-        }
-        lastDrive = driveTarget;
-        lastStank = stankTarget;
-
-        oversampling.processSamplesDown (io);
-    }
-
-    // ---- Base-rate stage: CRUST (bitcrush + sample-hold), GUNK (lowpass), DC block
-    const float holdLen = 1.0f + crust * crust * 31.0f;
-    const float steps   = std::pow (2.0f, (16.0f - crust * 13.0f) - 1.0f);
-    const float cutoff  = juce::jmin (20000.0f * std::pow (400.0f / 20000.0f, gunk), (float) sr * 0.45f);
-    const float a       = std::exp (-juce::MathConstants<float>::twoPi * cutoff / (float) sr);
+    const float hush = hushP->load();
+    float peak = 0.0f;
 
     for (int c = 0; c < numCh; ++c)
     {
-        auto& st = chans[(size_t) c];
-        float* x = io.getChannelPointer ((size_t) c);
+        auto& ch = chans[(size_t) c];
+        float* d = buffer.getWritePointer (c);
 
         for (int i = 0; i < numSamples; ++i)
         {
-            float v = x[i];
+            ch.in[(size_t) (fftSize - hop + ch.idx)] = d[i];
+            d[i] = ch.out[(size_t) ch.idx];
 
-            if (crust > 0.001f)
+            if (++ch.idx == hop)
             {
-                st.crushPhase += 1.0f;
-                if (st.crushPhase >= holdLen)
-                {
-                    st.crushPhase -= holdLen;
-                    st.crushHold = std::round (v * steps) / steps;
-                }
-                v = st.crushHold;
+                processFrame (ch, hush, c == 0);
+                std::copy (ch.in.begin() + hop, ch.in.end(), ch.in.begin());
+                ch.idx = 0;
             }
-
-            st.lp1 = v + a * (st.lp1 - v);
-            st.lp2 = st.lp1 + a * (st.lp2 - st.lp1);
-            v = st.lp2;
-
-            const float dc = v - st.dcX + 0.995f * st.dcY;
-            st.dcX = v;
-            st.dcY = dc;
-            x[i] = dc;
         }
-    }
-
-    io.multiplyBy (outGain);
-    mixer.mixWetSamples (io);
-
-    float peak = 0.0f;
-    for (int c = 0; c < numCh; ++c)
         peak = juce::jmax (peak, buffer.getMagnitude (c, 0, numSamples));
+    }
     outputLevel.store (peak);
 }
 
-juce::AudioProcessorEditor* MoistBoiProcessor::createEditor()
+juce::AudioProcessorEditor* ShizukaProcessor::createEditor()
 {
-    return new MoistBoiEditor (*this);
+    return new ShizukaEditor (*this);
 }
 
-void MoistBoiProcessor::getStateInformation (juce::MemoryBlock& destData)
+void ShizukaProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
     if (auto xml = apvts.copyState().createXml())
         copyXmlToBinary (*xml, destData);
 }
 
-void MoistBoiProcessor::setStateInformation (const void* data, int sizeInBytes)
+void ShizukaProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
     if (auto xml = getXmlFromBinary (data, sizeInBytes))
         if (xml->hasTagName (apvts.state.getType()))
@@ -213,5 +219,5 @@ void MoistBoiProcessor::setStateInformation (const void* data, int sizeInBytes)
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
 {
-    return new MoistBoiProcessor();
+    return new ShizukaProcessor();
 }

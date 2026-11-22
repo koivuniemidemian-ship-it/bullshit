@@ -1,62 +1,47 @@
 #pragma once
 
 #include "PluginProcessor.h"
-#include <vector>
 
-class GooLookAndFeel : public juce::LookAndFeel_V4
+class KawaiiLookAndFeel : public juce::LookAndFeel_V4
 {
 public:
-    GooLookAndFeel();
-
+    KawaiiLookAndFeel();
     void drawRotarySlider (juce::Graphics&, int x, int y, int width, int height,
                            float sliderPos, float startAngle, float endAngle, juce::Slider&) override;
-
-    void drawToggleButton (juce::Graphics&, juce::ToggleButton&,
-                           bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown) override;
 };
 
-class MoistBoiEditor : public juce::AudioProcessorEditor, private juce::Timer
+class ShizukaEditor : public juce::AudioProcessorEditor, private juce::Timer
 {
 public:
-    explicit MoistBoiEditor (MoistBoiProcessor&);
-    ~MoistBoiEditor() override;
+    explicit ShizukaEditor (ShizukaProcessor&);
+    ~ShizukaEditor() override;
 
     void paint (juce::Graphics&) override;
     void resized() override;
 
 private:
-    struct Knob
-    {
-        juce::Slider slider;
-        juce::Label label;
-        std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> attachment;
-    };
-
-    struct Droplet
-    {
-        juce::Point<float> pos, vel;
-        float life = 1.0f, size = 4.0f;
-    };
-
     void timerCallback() override;
-    void drawTitle (juce::Graphics&, juce::Rectangle<float> area);
-    void drawBlob (juce::Graphics&);
-    float norm (const juce::String& paramID) const;
-    juce::Point<float> blobCentre() const;
-    float blobRadius() const;
 
-    MoistBoiProcessor& proc;
-    GooLookAndFeel goo;
+    float hush() const;
+    int moodFor (float k) const;
+    void drawBackground (juce::Graphics&, float k);
+    void drawSpectrum (juce::Graphics&, float k);
+    void drawEffects (juce::Graphics&, float k, int mood);
+    void drawGirl (juce::Graphics&, int mood);
+    void drawBubble (juce::Graphics&, int mood);
 
-    std::array<Knob, 6> knobs;
-    juce::ToggleButton squelchButton { "SQUELCH" };
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> squelchAttachment;
+    ShizukaProcessor& proc;
+    KawaiiLookAndFeel lnf;
 
-    std::vector<Droplet> droplets;
+    juce::Slider knob;
+    juce::Label knobLabel;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> knobAttachment;
+
+    std::array<float, ShizukaProcessor::numBands> bandsUI {};
+    juce::Rectangle<float> stage;
     juce::Random rng;
-    juce::Rectangle<float> blobArea;
-    float t = 0.0f, level = 0.0f;
+    float t = 0.0f, gatedUI = 0.0f;
     int tagline = 0;
 
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MoistBoiEditor)
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ShizukaEditor)
 };

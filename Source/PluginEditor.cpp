@@ -1,44 +1,35 @@
 #include "PluginEditor.h"
-#include <algorithm>
 #include <cmath>
 
 namespace
 {
-    const juce::Colour slime  { 0xff9be22d };
-    const juce::Colour bile   { 0xffd8e04a };
-    const juce::Colour bruise { 0xff4a2a5a };
-    const juce::Colour crustC { 0xff6b4a2b };
-    const juce::Colour ink    { 0xff1d1424 };
-    const juce::Colour flesh  { 0xffe9c79a };
-    const juce::Colour sweat  { 0xff9fd8ff };
-    const juce::Colour tongue { 0xffe8708a };
-
-    struct KnobSpec { const char* id; const char* name; };
-    const KnobSpec specs[] = {
-        { "moisture", "MOISTURE" }, { "stank", "STANK" },  { "crust",  "CRUST"  },
-        { "gunk",     "GUNK"     }, { "ooze",  "OOZE"  },  { "volume", "VOLUME" }
-    };
+    const juce::Colour ink     { 0xff3a2440 };
+    const juce::Colour skin    { 0xffffe6d8 };
+    const juce::Colour hairC   { 0xff3b2a6b };
+    const juce::Colour hairHi  { 0xff6a56a8 };
+    const juce::Colour sweater { 0xff3e7c86 };
+    const juce::Colour hotPink { 0xffff4fa3 };
+    const juce::Colour cream   { 0xfffff4f8 };
+    const juce::Colour lilac   { 0xffe2ccff };
 
     const char* taglines[] = {
-        "do not lick the plugin",
-        "certified 100% moist",
-        "now with extra crust",
-        "your mix deserves to be damp",
-        "side effects may include stank",
-        "producers hate this one weird blob",
-        "please hydrate responsibly",
-        "warning: contains ooze",
-        "keep refrigerated after opening",
-        "he is sweating because he believes in you"
+        "this is a library.",
+        "your noise floor has been reported",
+        "please lower your frequencies",
+        "quiet hours are 24/7",
+        "she has heard enough",
+        "late fees apply to reverb tails",
+        "no talking. no hiss. no hum.",
+        "your snare is overdue"
     };
     constexpr int numTaglines = (int) (sizeof (taglines) / sizeof (taglines[0]));
 
-    juce::Font chunky (float size, int style = juce::Font::bold)
+    juce::Font fontOf (float size, int style = juce::Font::bold)
     {
         return juce::Font (juce::FontOptions (size, style));
     }
 
-    void drawDrop (juce::Graphics& g, float x, float y, float s, float alpha)
+    void drawDrop (juce::Graphics& g, float x, float y, float s)
     {
         juce::Path d;
         d.startNewSubPath (x, y - 1.8f * s);
@@ -47,391 +38,605 @@ namespace
         d.cubicTo (x - 0.5f * s, y + s, x - s, y + 0.8f * s, x - s, y + 0.2f * s);
         d.cubicTo (x - s, y - 0.3f * s, x - 0.4f * s, y - 1.0f * s, x, y - 1.8f * s);
         d.closeSubPath();
-
-        g.setColour (sweat.withAlpha (alpha));
+        g.setColour (juce::Colour (0xffa8dcff));
         g.fillPath (d);
-        g.setColour (ink.withAlpha (alpha * 0.8f));
-        g.strokePath (d, juce::PathStrokeType (1.2f));
-        g.setColour (juce::Colours::white.withAlpha (alpha * 0.8f));
-        g.fillEllipse (x - 0.5f * s, y - 0.2f * s, 0.35f * s, 0.5f * s);
+        g.setColour (ink);
+        g.strokePath (d, juce::PathStrokeType (2.0f));
+    }
+
+    juce::Path heart (float cx, float cy, float s)
+    {
+        juce::Path h;
+        h.startNewSubPath (cx, cy + s * 0.9f);
+        h.cubicTo (cx - s * 1.2f, cy + s * 0.1f, cx - s * 0.9f, cy - s * 0.9f, cx, cy - s * 0.35f);
+        h.cubicTo (cx + s * 0.9f, cy - s * 0.9f, cx + s * 1.2f, cy + s * 0.1f, cx, cy + s * 0.9f);
+        h.closeSubPath();
+        return h;
     }
 }
 
 //==============================================================================
-GooLookAndFeel::GooLookAndFeel()
+KawaiiLookAndFeel::KawaiiLookAndFeel()
 {
     setColour (juce::Slider::textBoxTextColourId, ink);
     setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
-    setColour (juce::Slider::textBoxBackgroundColourId, bile.withAlpha (0.45f));
-    setColour (juce::Slider::textBoxHighlightColourId, slime);
+    setColour (juce::Slider::textBoxBackgroundColourId, cream.withAlpha (0.7f));
+    setColour (juce::Slider::textBoxHighlightColourId, hotPink.withAlpha (0.4f));
     setColour (juce::Label::textColourId, ink);
 }
 
-void GooLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int w, int h,
-                                       float pos, float startA, float endA, juce::Slider&)
+void KawaiiLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int w, int h,
+                                          float pos, float startA, float endA, juce::Slider&)
 {
-    auto b = juce::Rectangle<float> ((float) x, (float) y, (float) w, (float) h).reduced (6.0f);
+    auto b = juce::Rectangle<float> ((float) x, (float) y, (float) w, (float) h).reduced (8.0f);
     const float r = juce::jmin (b.getWidth(), b.getHeight()) * 0.5f;
     const auto c = b.getCentre();
     const float angle = startA + pos * (endA - startA);
+    const auto accent = hotPink.interpolatedWith (juce::Colour (0xffe0102a), juce::jlimit (0.0f, 1.0f, (pos - 0.6f) * 2.5f));
 
-    // Drip hanging off the knob, longer the higher it's turned
-    const float dripLen = r * (0.2f + 0.9f * pos);
-    g.setColour (bruise.darker (0.2f));
-    g.fillRoundedRectangle (c.x + r * 0.25f, c.y + r * 0.4f, r * 0.16f, dripLen, r * 0.08f);
-    g.fillEllipse (c.x + r * 0.21f, c.y + r * 0.4f + dripLen - r * 0.12f, r * 0.24f, r * 0.24f);
-
-    // Wobbly blob body
-    juce::Path blob;
-    const int N = 48;
-    for (int i = 0; i <= N; ++i)
-    {
-        const float th = juce::MathConstants<float>::twoPi * (float) i / (float) N;
-        const float rr = r * (0.80f + 0.05f * std::sin (5.0f * th + pos * 9.0f)
-                                    + 0.05f * pos * std::sin (9.0f * th));
-        const float px = c.x + std::sin (th) * rr, py = c.y - std::cos (th) * rr;
-        if (i == 0) blob.startNewSubPath (px, py); else blob.lineTo (px, py);
-    }
-    blob.closeSubPath();
-
-    g.setGradientFill (juce::ColourGradient (bruise.brighter (0.4f), c.x - r, c.y - r,
-                                             bruise.darker (0.4f), c.x + r, c.y + r, false));
-    g.fillPath (blob);
-    g.setColour (ink);
-    g.strokePath (blob, juce::PathStrokeType (2.5f));
-
-    // Arc track + slimy value arc
-    juce::Path track, value;
-    track.addCentredArc (c.x, c.y, r * 0.98f, r * 0.98f, 0.0f, startA, endA, true);
-    value.addCentredArc (c.x, c.y, r * 0.98f, r * 0.98f, 0.0f, startA, angle, true);
-    const juce::PathStrokeType arcStroke (5.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded);
     g.setColour (ink.withAlpha (0.25f));
-    g.strokePath (track, arcStroke);
-    g.setColour (slime);
-    g.strokePath (value, arcStroke);
+    g.fillEllipse (c.x - r + 3.0f, c.y - r + 5.0f, r * 2.0f, r * 2.0f);
 
-    // Pointer
-    const juce::Point<float> tip (c.x + std::sin (angle) * r * 0.6f, c.y - std::cos (angle) * r * 0.6f);
-    g.setColour (bile);
-    g.drawLine (c.x, c.y, tip.x, tip.y, 4.0f);
-    g.fillEllipse (tip.x - r * 0.1f, tip.y - r * 0.1f, r * 0.2f, r * 0.2f);
-    g.setColour (crustC);
-    g.fillEllipse (c.x - r * 0.14f, c.y - r * 0.14f, r * 0.28f, r * 0.28f);
-}
-
-void GooLookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton& button, bool highlighted, bool)
-{
-    auto b = button.getLocalBounds().toFloat().reduced (2.0f);
-    const bool on = button.getToggleState();
-    const float corner = b.getHeight() * 0.5f;
-
-    g.setColour (on ? slime : bruise.withAlpha (highlighted ? 0.8f : 0.6f));
-    g.fillRoundedRectangle (b, corner);
+    g.setGradientFill (juce::ColourGradient (juce::Colours::white, c.x, c.y - r, lilac, c.x, c.y + r, false));
+    g.fillEllipse (c.x - r, c.y - r, r * 2.0f, r * 2.0f);
     g.setColour (ink);
-    g.drawRoundedRectangle (b, corner, 2.5f);
-    g.setColour (on ? ink : bile);
-    g.setFont (chunky (15.0f));
-    g.drawText (on ? "SQUELCHING" : button.getButtonText(), b, juce::Justification::centred);
+    g.drawEllipse (c.x - r, c.y - r, r * 2.0f, r * 2.0f, 3.0f);
+
+    // tick marks
+    for (int i = 0; i <= 10; ++i)
+    {
+        const float a = startA + (endA - startA) * (float) i / 10.0f;
+        const float r1 = r * 0.78f, r2 = r * (i % 5 == 0 ? 0.62f : 0.70f);
+        g.setColour (ink.withAlpha (0.5f));
+        g.drawLine (c.x + std::sin (a) * r1, c.y - std::cos (a) * r1,
+                    c.x + std::sin (a) * r2, c.y - std::cos (a) * r2, 2.0f);
+    }
+
+    juce::Path track, value;
+    track.addCentredArc (c.x, c.y, r * 0.9f, r * 0.9f, 0.0f, startA, endA, true);
+    value.addCentredArc (c.x, c.y, r * 0.9f, r * 0.9f, 0.0f, startA, angle, true);
+    const juce::PathStrokeType stroke (8.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded);
+    g.setColour (ink.withAlpha (0.15f));
+    g.strokePath (track, stroke);
+    g.setColour (accent);
+    g.strokePath (value, stroke);
+
+    // cap with a heart
+    const float cr = r * 0.42f;
+    g.setColour (cream);
+    g.fillEllipse (c.x - cr, c.y - cr, cr * 2.0f, cr * 2.0f);
+    g.setColour (ink);
+    g.drawEllipse (c.x - cr, c.y - cr, cr * 2.0f, cr * 2.0f, 2.5f);
+    g.setColour (accent);
+    g.fillPath (heart (c.x, c.y, cr * 0.5f));
+
+    // pointer dot
+    const float pr = r * 0.9f;
+    const juce::Point<float> tip (c.x + std::sin (angle) * pr, c.y - std::cos (angle) * pr);
+    g.setColour (juce::Colours::white);
+    g.fillEllipse (tip.x - 8.0f, tip.y - 8.0f, 16.0f, 16.0f);
+    g.setColour (ink);
+    g.drawEllipse (tip.x - 8.0f, tip.y - 8.0f, 16.0f, 16.0f, 2.5f);
 }
 
 //==============================================================================
-MoistBoiEditor::MoistBoiEditor (MoistBoiProcessor& p)
+ShizukaEditor::ShizukaEditor (ShizukaProcessor& p)
     : AudioProcessorEditor (&p), proc (p)
 {
-    setLookAndFeel (&goo);
+    setLookAndFeel (&lnf);
 
-    for (size_t i = 0; i < knobs.size(); ++i)
-    {
-        auto& k = knobs[i];
-        k.slider.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
-        k.slider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 76, 18);
-        addAndMakeVisible (k.slider);
+    knob.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
+    knob.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 90, 20);
+    addAndMakeVisible (knob);
+    knobAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (proc.apvts, "hush", knob);
 
-        k.label.setText (specs[i].name, juce::dontSendNotification);
-        k.label.setJustificationType (juce::Justification::centred);
-        k.label.setFont (chunky (16.0f));
-        addAndMakeVisible (k.label);
+    knobLabel.setText ("SHHH-O-METER", juce::dontSendNotification);
+    knobLabel.setJustificationType (juce::Justification::centred);
+    knobLabel.setFont (fontOf (17.0f));
+    addAndMakeVisible (knobLabel);
 
-        k.attachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
-            proc.apvts, specs[i].id, k.slider);
-    }
+    for (auto& b : bandsUI)
+        b = -100.0f;
 
-    addAndMakeVisible (squelchButton);
-    squelchAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (
-        proc.apvts, "squelch", squelchButton);
-
-    setSize (620, 480);
+    setSize (560, 670);
     startTimerHz (30);
 }
 
-MoistBoiEditor::~MoistBoiEditor()
+ShizukaEditor::~ShizukaEditor()
 {
     stopTimer();
     setLookAndFeel (nullptr);
 }
 
-float MoistBoiEditor::norm (const juce::String& id) const
+void ShizukaEditor::resized()
 {
-    if (auto* param = proc.apvts.getParameter (id))
+    stage = juce::Rectangle<float> (0.0f, 0.0f, (float) getWidth(), 470.0f);
+    knobLabel.setBounds (0, 474, getWidth(), 22);
+    knob.setBounds (getWidth() / 2 - 85, 496, 170, 140);
+}
+
+float ShizukaEditor::hush() const
+{
+    if (auto* param = proc.apvts.getParameter ("hush"))
         return param->getValue();
     return 0.0f;
 }
 
-juce::Point<float> MoistBoiEditor::blobCentre() const { return blobArea.getCentre().translated (0.0f, -6.0f); }
-float MoistBoiEditor::blobRadius() const { return juce::jmin (blobArea.getWidth(), blobArea.getHeight()) * 0.36f; }
-
-void MoistBoiEditor::resized()
+int ShizukaEditor::moodFor (float k) const
 {
-    auto area = getLocalBounds();
-    area.removeFromTop (80);
-    area.removeFromBottom (36);
-
-    auto left  = area.removeFromLeft (140).reduced (8, 0);
-    auto right = area.removeFromRight (140).reduced (8, 0);
-
-    auto place = [] (Knob& k, juce::Rectangle<int> r)
-    {
-        k.label.setBounds (r.removeFromTop (20));
-        k.slider.setBounds (r);
-    };
-
-    const int h = left.getHeight() / 3;
-    for (size_t i = 0; i < 3; ++i) place (knobs[i],     left.removeFromTop (h).reduced (0, 2));
-    for (size_t i = 3; i < 6; ++i) place (knobs[i],     right.removeFromTop (h).reduced (0, 2));
-
-    squelchButton.setBounds (area.removeFromBottom (48).withSizeKeepingCentre (136, 34));
-    blobArea = area.toFloat();
+    if (k < 0.001f) return 0;   // dozing
+    if (k < 0.30f)  return 1;   // polite
+    if (k < 0.60f)  return 2;   // annoyed
+    if (k < 0.85f)  return 3;   // angry
+    return 4;                   // final form
 }
 
-void MoistBoiEditor::timerCallback()
+void ShizukaEditor::timerCallback()
 {
     t += 1.0f / 30.0f;
 
-    const float target = juce::jlimit (0.0f, 1.0f, proc.outputLevel.load());
-    level += (target - level) * (target > level ? 0.5f : 0.12f);
+    for (size_t i = 0; i < bandsUI.size(); ++i)
+    {
+        const float target = proc.bands[i].load();
+        bandsUI[i] += (target - bandsUI[i]) * (target > bandsUI[i] ? 0.6f : 0.15f);
+    }
+    gatedUI += (proc.gatedAmount.load() - gatedUI) * 0.2f;
     tagline = (int) (t / 4.0f) % numTaglines;
-
-    // Spray sweat when it gets too moist
-    const float moist = norm ("moisture");
-    const auto c = blobCentre();
-    const float R = blobRadius();
-    if (moist > 0.45f && droplets.size() < 200 && rng.nextFloat() < (moist - 0.45f) * 2.5f)
-    {
-        const int n = 1 + (moist > 0.8f ? rng.nextInt (3) : 0);
-        for (int i = 0; i < n; ++i)
-        {
-            const float a = -juce::MathConstants<float>::halfPi + (rng.nextFloat() - 0.5f) * 2.4f;
-            Droplet d;
-            d.pos  = { c.x + std::cos (a) * R, c.y + std::sin (a) * R * 0.9f };
-            d.vel  = { std::cos (a) * (1.5f + rng.nextFloat() * 3.0f), std::sin (a) * (2.0f + rng.nextFloat() * 3.0f) - 2.0f };
-            d.size = 3.0f + rng.nextFloat() * 3.0f;
-            droplets.push_back (d);
-        }
-    }
-
-    for (auto& d : droplets)
-    {
-        d.vel.y += 0.35f;
-        d.pos += d.vel;
-        d.life -= 0.02f;
-    }
-    const float bottom = (float) getHeight();
-    droplets.erase (std::remove_if (droplets.begin(), droplets.end(),
-                                    [bottom] (const Droplet& d) { return d.life <= 0.0f || d.pos.y > bottom; }),
-                    droplets.end());
 
     repaint();
 }
 
-void MoistBoiEditor::paint (juce::Graphics& g)
+void ShizukaEditor::paint (juce::Graphics& g)
 {
-    const auto bounds = getLocalBounds().toFloat();
+    const float k = hush();
+    const int mood = moodFor (k);
 
-    g.setGradientFill (juce::ColourGradient (bile, 0.0f, 0.0f, slime.darker (0.35f), 0.0f, bounds.getHeight(), false));
+    drawBackground (g, k);
+
+    {
+        juce::Graphics::ScopedSaveState save (g);
+        g.reduceClipRegion (stage.toNearestInt());
+
+        drawSpectrum (g, k);
+
+        if (mood == 4)   // screen shake
+            g.addTransform (juce::AffineTransform::translation ((rng.nextFloat() - 0.5f) * 8.0f,
+                                                                (rng.nextFloat() - 0.5f) * 8.0f));
+        drawEffects (g, k, mood);
+        drawGirl (g, mood);
+        drawBubble (g, mood);
+    }
+
+    g.setColour (ink.withAlpha (0.85f));
+    g.setFont (fontOf (15.0f, juce::Font::italic));
+    g.drawText (taglines[tagline], getLocalBounds().removeFromBottom (32), juce::Justification::centred);
+}
+
+void ShizukaEditor::drawBackground (juce::Graphics& g, float k)
+{
+    const float rage = juce::jlimit (0.0f, 1.0f, (k - 0.55f) / 0.45f);
+    const auto top = juce::Colour (0xffffd6e8).interpolatedWith (juce::Colour (0xff2a0010), rage);
+    const auto bot = juce::Colour (0xffd9c8ff).interpolatedWith (juce::Colour (0xff7a0020), rage);
+    g.setGradientFill (juce::ColourGradient (top, 0.0f, 0.0f, bot, 0.0f, (float) getHeight(), false));
     g.fillAll();
 
-    // Grime stains (fixed seed so they don't flicker)
-    juce::Random spots (1337);
-    for (int i = 0; i < 40; ++i)
+    // sparkles fade out as she gets angrier
+    juce::Random sp (99);
+    for (int i = 0; i < 26; ++i)
     {
-        const float s = 8.0f + spots.nextFloat() * 40.0f;
-        g.setColour (crustC.withAlpha (0.04f + spots.nextFloat() * 0.08f));
-        g.fillEllipse (spots.nextFloat() * bounds.getWidth(), spots.nextFloat() * bounds.getHeight(), s, s * (0.6f + spots.nextFloat() * 0.6f));
+        const float x = sp.nextFloat() * (float) getWidth();
+        const float y = sp.nextFloat() * (float) getHeight();
+        const float s = 4.0f + sp.nextFloat() * 6.0f;
+        const float twinkle = 0.5f + 0.5f * std::sin (t * 2.0f + (float) i);
+        juce::Path star;
+        star.addStar ({ x, y }, 4, s * 0.3f, s, t * 0.3f);
+        g.setColour (juce::Colours::white.withAlpha ((1.0f - rage) * 0.7f * twinkle));
+        g.fillPath (star);
     }
 
-    // Knob column panels
-    g.setColour (bruise.withAlpha (0.12f));
-    g.fillRoundedRectangle (6.0f, 82.0f, 136.0f, bounds.getHeight() - 124.0f, 18.0f);
-    g.fillRoundedRectangle (bounds.getWidth() - 142.0f, 82.0f, 136.0f, bounds.getHeight() - 124.0f, 18.0f);
-
-    drawTitle (g, bounds.withHeight (80.0f));
-    drawBlob (g);
-
-    for (const auto& d : droplets)
-        drawDrop (g, d.pos.x, d.pos.y, d.size, juce::jlimit (0.0f, 1.0f, d.life));
-
-    g.setColour (ink.withAlpha (0.8f));
-    g.setFont (chunky (15.0f, juce::Font::italic));
-    g.drawText (taglines[tagline], bounds.withTop (bounds.getBottom() - 36.0f), juce::Justification::centred);
+    // knob area panel
+    g.setColour (cream.withAlpha (0.35f));
+    g.fillRoundedRectangle (150.0f, 472.0f, (float) getWidth() - 300.0f, 168.0f, 24.0f);
 }
 
-void MoistBoiEditor::drawTitle (juce::Graphics& g, juce::Rectangle<float> area)
+void ShizukaEditor::drawSpectrum (juce::Graphics& g, float k)
 {
-    const float moist = norm ("moisture");
-    auto textArea = area.withSizeKeepingCentre (340.0f, 56.0f).translated (0.0f, 2.0f);
+    const auto area = stage.reduced (16.0f, 0.0f).withTrimmedTop (150.0f).withTrimmedBottom (6.0f);
+    const float bw = area.getWidth() / (float) ShizukaProcessor::numBands;
+    const float thresh = ShizukaProcessor::thresholdDbFor (k);
+    auto yFor = [&] (float db) { return area.getBottom() - area.getHeight() * juce::jlimit (0.0f, 1.0f, (db + 100.0f) / 100.0f); };
 
-    // Drips under the letters
-    g.setColour (slime.darker (0.25f));
-    for (int k = 0; k < 10; ++k)
+    for (int i = 0; i < ShizukaProcessor::numBands; ++i)
     {
-        const float x = textArea.getX() + 20.0f + (float) k * 31.0f;
-        const float len = 4.0f + 14.0f * (0.5f + 0.5f * std::sin (t * 0.8f + (float) k * 1.7f)) * (0.3f + moist);
-        const float y = textArea.getBottom() - 12.0f;
-        g.fillRoundedRectangle (x, y, 5.0f, len, 2.5f);
-        g.fillEllipse (x - 1.5f, y + len - 4.0f, 8.0f, 8.0f);
+        const float db = bandsUI[(size_t) i];
+        const float y = yFor (db);
+        const bool silenced = k > 0.001f && db < thresh;
+        g.setColour (silenced ? ink.withAlpha (0.12f) : juce::Colour (0xff7fe7ff).interpolatedWith (hotPink, (float) i / 48.0f).withAlpha (0.45f));
+        g.fillRoundedRectangle (area.getX() + (float) i * bw + 1.0f, y, bw - 2.0f, area.getBottom() - y, 2.0f);
     }
 
-    g.setFont (chunky (52.0f));
-    g.setColour (ink);
-    g.drawText ("MOIST BOI", textArea.translated (3.0f, 3.0f), juce::Justification::centred);
-    g.setColour (slime.brighter (0.2f));
-    g.drawText ("MOIST BOI", textArea, juce::Justification::centred);
+    if (k > 0.001f)
+    {
+        const float ty = yFor (thresh);
+        const float dashes[] = { 10.0f, 6.0f };
+        g.setColour (hotPink.withAlpha (0.9f));
+        g.drawDashedLine ({ area.getX(), ty, area.getRight(), ty }, dashes, 2, 3.0f);
+        g.setFont (fontOf (13.0f));
+        g.drawText ("QUIET LINE", juce::Rectangle<float> (area.getRight() - 100.0f, ty - 18.0f, 100.0f, 16.0f), juce::Justification::centredRight);
+    }
 }
 
-void MoistBoiEditor::drawBlob (juce::Graphics& g)
+void ShizukaEditor::drawEffects (juce::Graphics& g, float k, int mood)
 {
-    const float moist  = norm ("moisture");
-    const float stank  = norm ("stank");
-    const float crustN = norm ("crust");
-    const float gunkN  = norm ("gunk");
-    const bool squelch = squelchButton.getToggleState();
+    const float cx = stage.getCentreX(), cy = 215.0f;
 
-    const auto c = blobCentre();
-    const float R = blobRadius();
-    const float wob = 0.03f + 0.10f * stank + 0.12f * level;
-
-    // Puddle grows with moisture
-    const float puddleW = R * (1.6f + 1.2f * moist);
-    g.setColour (sweat.withAlpha (0.25f + 0.35f * moist));
-    g.fillEllipse (c.x - puddleW * 0.5f, c.y + R * 0.78f, puddleW, R * 0.32f);
-    g.setColour (ink.withAlpha (0.25f));
-    g.fillEllipse (c.x - R * 1.0f, c.y + R * 0.8f, R * 2.0f, R * 0.25f);
-
-    // Body
-    juce::Path body;
-    const int N = 72;
-    for (int i = 0; i <= N; ++i)
+    if (mood >= 3)   // speed lines
     {
-        const float th = juce::MathConstants<float>::twoPi * (float) i / (float) N;
-        const float r = R * (1.0f + wob * std::sin (3.0f * th + t * 1.3f)
-                                  + 0.5f * wob * std::sin (5.0f * th - t * 2.3f)
-                                  + 0.04f * std::sin (2.0f * th + t * 0.7f));
-        float px = c.x + std::cos (th) * r * 1.08f;
-        float py = c.y + std::sin (th) * r * (0.92f + 0.04f * std::sin (t * 2.0f));
-        if (std::sin (th) > 0.0f)
-            py = c.y + (py - c.y) * 0.85f; // squish the bottom flat like he's sitting in it
-        if (i == 0) body.startNewSubPath (px, py); else body.lineTo (px, py);
-    }
-    body.closeSubPath();
-    body = body.createPathWithRoundedCorners (10.0f);
-
-    const auto top = flesh.interpolatedWith (slime, juce::jmin (1.0f, 0.35f * gunkN + (squelch ? 0.4f : 0.0f)));
-    const auto bot = top.darker (0.5f).interpolatedWith (crustC, crustN * 0.6f);
-    g.setGradientFill (juce::ColourGradient (top, c.x - R * 0.5f, c.y - R, bot, c.x + R * 0.5f, c.y + R, false));
-    g.fillPath (body);
-    g.setColour (ink);
-    g.strokePath (body, juce::PathStrokeType (4.0f));
-
-    // Crusty patches
-    juce::Random cr (42);
-    const int nSpots = (int) (crustN * 18.0f);
-    for (int i = 0; i < nSpots; ++i)
-    {
-        const float a = cr.nextFloat() * juce::MathConstants<float>::twoPi;
-        const float dist = R * (0.3f + 0.55f * cr.nextFloat());
-        const float s = R * (0.05f + 0.08f * cr.nextFloat());
-        g.setColour (crustC.withAlpha (0.65f));
-        g.fillEllipse (c.x + std::cos (a) * dist - s, c.y + std::sin (a) * dist * 0.8f - s * 0.7f, s * 2.0f, s * 1.4f);
-    }
-
-    // Wet shine
-    g.setColour (juce::Colours::white.withAlpha (0.3f + 0.4f * moist));
-    g.fillEllipse (c.x - R * 0.7f, c.y - R * 0.72f, R * 0.45f, R * 0.2f);
-
-    // Blush
-    g.setColour (tongue.withAlpha (0.25f + 0.3f * moist));
-    g.fillEllipse (c.x - R * 0.75f, c.y + R * 0.05f, R * 0.3f, R * 0.15f);
-    g.fillEllipse (c.x + R * 0.45f, c.y + R * 0.02f, R * 0.3f, R * 0.15f);
-
-    // Googly eyes (mismatched on purpose)
-    auto eye = [&] (float ex, float ey, float er, float phase)
-    {
-        g.setColour (juce::Colours::white);
-        g.fillEllipse (ex - er, ey - er, er * 2.0f, er * 2.0f);
-        g.setColour (ink);
-        g.drawEllipse (ex - er, ey - er, er * 2.0f, er * 2.0f, 3.0f);
-
-        float ox, oy;
-        if (squelch) { ox = std::cos (t * 6.0f + phase) * 0.45f; oy = std::sin (t * 6.0f + phase) * 0.45f; }
-        else         { ox = std::sin (t * 1.7f + phase) * 0.4f;  oy = std::cos (t * 1.1f + phase) * 0.3f; }
-
-        const float pr = er * (0.45f - 0.2f * moist);
-        g.fillEllipse (ex + ox * er - pr, ey + oy * er - pr, pr * 2.0f, pr * 2.0f);
-        g.setColour (juce::Colours::white);
-        g.fillEllipse (ex + ox * er - pr * 0.5f, ey + oy * er - pr * 0.6f, pr * 0.5f, pr * 0.5f);
-    };
-    eye (c.x - R * 0.35f, c.y - R * 0.22f, R * 0.22f, 0.0f);
-    eye (c.x + R * 0.32f, c.y - R * 0.27f, R * 0.16f, 1.3f);
-
-    // Nervous brow sweat lines
-    if (moist > 0.6f)
-    {
-        g.setColour (ink.withAlpha ((moist - 0.6f) * 2.5f));
-        for (int i = 0; i < 3; ++i)
+        const float a = juce::jlimit (0.0f, 1.0f, (k - 0.6f) / 0.3f);
+        juce::Random lr ((juce::int64) (t * 10.0f));
+        for (int i = 0; i < 40; ++i)
         {
-            const float x = c.x - R * 0.15f + (float) i * R * 0.14f;
-            g.drawLine (x, c.y - R * 0.62f, x + R * 0.05f, c.y - R * 0.5f, 2.5f);
+            const float ang = juce::MathConstants<float>::twoPi * (float) i / 40.0f + lr.nextFloat() * 0.1f;
+            const float r1 = 190.0f + lr.nextFloat() * 40.0f, r2 = 420.0f;
+            g.setColour (juce::Colours::white.withAlpha (0.35f * a));
+            g.drawLine (cx + std::cos (ang) * r1, cy + std::sin (ang) * r1, cx + std::cos (ang) * r2, cy + std::sin (ang) * r2, 2.0f + lr.nextFloat() * 3.0f);
         }
     }
 
-    // Mouth flaps with the output level
-    const float mx = c.x, my = c.y + R * 0.35f, mw = R * 0.7f;
-    const float open = juce::jlimit (0.0f, 1.0f, 0.05f + level * 0.9f);
-    if (open > 0.15f || squelch)
+    if (mood == 4)   // rage aura
     {
-        const float mh = R * 0.35f * juce::jmax (open, 0.35f);
-        juce::Rectangle<float> m (mx - mw * 0.5f, my - mh * 0.3f, mw, mh);
-        g.setColour (ink);
-        g.fillEllipse (m);
-        g.setColour (tongue);
-        if (squelch)
-            g.fillRoundedRectangle (mx - mw * 0.18f, my + mh * 0.2f, mw * 0.36f, mh * 0.9f + R * 0.1f * (0.5f + 0.5f * std::sin (t * 4.0f)), mw * 0.18f);
-        else
-            g.fillEllipse (m.reduced (mw * 0.2f, 0.0f).withTrimmedTop (mh * 0.5f));
+        juce::Path aura;
+        const int N = 90;
+        for (int i = 0; i <= N; ++i)
+        {
+            const float th = juce::MathConstants<float>::twoPi * (float) i / (float) N;
+            const float r = 165.0f * (1.0f + 0.12f * std::abs (std::sin (7.0f * th + t * 6.0f)) + 0.05f * std::sin (13.0f * th - t * 9.0f));
+            const float px = cx + std::cos (th) * r * 1.05f, py = cy + 30.0f + std::sin (th) * r * 1.1f;
+            if (i == 0) aura.startNewSubPath (px, py); else aura.lineTo (px, py);
+        }
+        aura.closeSubPath();
+        for (int i = 4; i >= 1; --i)
+        {
+            g.setColour (juce::Colour (0xffff3a2a).withAlpha (0.12f * (float) i));
+            g.strokePath (aura, juce::PathStrokeType ((float) i * 7.0f));
+        }
+    }
+}
+
+void ShizukaEditor::drawGirl (juce::Graphics& g, int mood)
+{
+    const float cx = stage.getCentreX(), cy = 215.0f, R = 105.0f;
+    const float bottom = stage.getBottom();
+    const float pulse = 1.0f + 0.25f * gatedUI;
+
+    // --- back hair + bun + pencil
+    g.setColour (hairC);
+    g.fillRoundedRectangle (cx - 1.02f * R, cy - 1.0f * R, 2.04f * R, 2.15f * R, 0.9f * R);
+    g.fillEllipse (cx - 0.35f * R, cy - 1.38f * R, 0.8f * R, 0.68f * R);
+
+    juce::Path pencil;
+    pencil.addRoundedRectangle (-0.75f * R, -0.06f * R, 1.5f * R, 0.12f * R, 0.03f * R);
+    pencil.applyTransform (juce::AffineTransform::rotation (-0.45f).translated (cx + 0.05f * R, cy - 1.04f * R));
+    g.setColour (juce::Colour (0xffffd04a));
+    g.fillPath (pencil);
+    g.setColour (ink);
+    g.strokePath (pencil, juce::PathStrokeType (2.0f));
+
+    // --- neck, sweater, turtleneck
+    g.setColour (skin.darker (0.08f));
+    g.fillRect (cx - 0.2f * R, cy + 0.6f * R, 0.4f * R, 0.35f * R);
+
+    juce::Path body;
+    body.startNewSubPath (cx - 0.3f * R, cy + 1.05f * R);
+    body.cubicTo (cx - 0.9f * R, cy + 1.15f * R, cx - 1.35f * R, cy + 1.3f * R, cx - 1.5f * R, cy + 1.9f * R);
+    body.lineTo (cx - 1.55f * R, bottom + 10.0f);
+    body.lineTo (cx + 1.55f * R, bottom + 10.0f);
+    body.lineTo (cx + 1.5f * R, cy + 1.9f * R);
+    body.cubicTo (cx + 1.35f * R, cy + 1.3f * R, cx + 0.9f * R, cy + 1.15f * R, cx + 0.3f * R, cy + 1.05f * R);
+    body.closeSubPath();
+    g.setColour (sweater);
+    g.fillPath (body);
+    g.setColour (ink);
+    g.strokePath (body, juce::PathStrokeType (3.0f));
+
+    const juce::Rectangle<float> collar (cx - 0.4f * R, cy + 0.78f * R, 0.8f * R, 0.42f * R);
+    g.setColour (sweater.darker (0.2f));
+    g.fillRoundedRectangle (collar, 0.16f * R);
+    g.setColour (ink);
+    g.drawRoundedRectangle (collar, 0.16f * R, 2.5f);
+    g.setColour (ink.withAlpha (0.3f));
+    for (int i = 1; i < 6; ++i)
+    {
+        const float x = collar.getX() + collar.getWidth() * (float) i / 6.0f;
+        g.drawLine (x, collar.getY() + 6.0f, x, collar.getBottom() - 6.0f, 1.5f);
+    }
+
+    // name badge
+    const juce::Rectangle<float> badge (cx + 0.55f * R, cy + 1.5f * R, 0.8f * R, 0.3f * R);
+    g.setColour (cream);
+    g.fillRoundedRectangle (badge, 4.0f);
+    g.setColour (ink);
+    g.drawRoundedRectangle (badge, 4.0f, 2.0f);
+    g.setFont (fontOf (11.0f));
+    g.drawText ("LIBRARIAN", badge, juce::Justification::centred);
+
+    // --- face
+    juce::Path face;
+    face.startNewSubPath (cx - 0.8f * R, cy - 0.3f * R);
+    face.cubicTo (cx - 0.8f * R, cy + 0.35f * R, cx - 0.35f * R, cy + 0.85f * R, cx, cy + 0.95f * R);
+    face.cubicTo (cx + 0.35f * R, cy + 0.85f * R, cx + 0.8f * R, cy + 0.35f * R, cx + 0.8f * R, cy - 0.3f * R);
+    face.cubicTo (cx + 0.8f * R, cy - 1.0f * R, cx - 0.8f * R, cy - 1.0f * R, cx - 0.8f * R, cy - 0.3f * R);
+    face.closeSubPath();
+    g.setColour (skin);
+    g.fillPath (face);
+    g.setColour (ink);
+    g.strokePath (face, juce::PathStrokeType (2.5f));
+
+    // blush / anger flush
+    if (mood >= 3)
+    {
+        g.setColour (juce::Colour (0xffff3030).withAlpha (mood == 4 ? 0.35f : 0.22f));
+        g.fillEllipse (cx - 0.7f * R, cy + 0.25f * R, 1.4f * R, 0.3f * R);
     }
     else
     {
-        juce::Path smile;
-        smile.startNewSubPath (mx - mw * 0.5f, my);
-        const int segs = 6;
-        for (int i = 1; i <= segs; ++i)
-        {
-            const float px = mx - mw * 0.5f + mw * (float) i / (float) segs;
-            const float py = my + std::sin ((float) i * 1.9f + t * 3.0f) * R * 0.03f + std::sin ((float) i / (float) segs * juce::MathConstants<float>::pi) * R * 0.08f;
-            smile.lineTo (px, py);
-        }
-        g.setColour (ink);
-        g.strokePath (smile, juce::PathStrokeType (4.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        g.setColour (hotPink.withAlpha (0.45f));
+        for (int s = -1; s <= 1; s += 2)
+            for (int i = 0; i < 3; ++i)
+            {
+                const float bx = cx + (float) s * 0.5f * R + (float) i * 0.07f * R - 0.07f * R;
+                g.drawLine (bx, cy + 0.42f * R, bx - 0.04f * R, cy + 0.5f * R, 2.0f);
+            }
     }
 
-    // Sweat beads sliding down his face
-    const int beads = (int) (moist * 7.0f);
-    juce::Random br (7);
-    for (int k = 0; k < beads; ++k)
+    // --- bangs
+    juce::Path bangs;
+    bangs.startNewSubPath (cx - 0.92f * R, cy + 0.05f * R);
+    bangs.cubicTo (cx - 1.0f * R, cy - 1.15f * R, cx + 1.0f * R, cy - 1.15f * R, cx + 0.92f * R, cy + 0.05f * R);
+    const int spikes = 7;
+    for (int i = 0; i <= spikes * 2; ++i)
     {
-        const float xOff = (br.nextFloat() - 0.5f) * R * 1.4f;
-        const float progress = std::fmod (t * 0.25f * (1.0f + (float) k * 0.13f) + (float) k * 0.37f, 1.0f);
-        const float y = c.y - R * 0.65f + progress * R * 1.1f;
-        drawDrop (g, c.x + xOff, y, 3.5f + 2.0f * moist, 1.0f - progress);
+        const float x = cx + 0.85f * R - 1.7f * R * (float) i / (float) (spikes * 2);
+        const float y = (i % 2 == 0) ? cy - 0.32f * R : cy - 0.08f * R;
+        bangs.lineTo (x, y);
     }
+    bangs.closeSubPath();
+    g.setColour (hairC);
+    g.fillPath (bangs);
+
+    // side locks
+    for (int s = -1; s <= 1; s += 2)
+    {
+        juce::Path lock;
+        const float x0 = cx + (float) s * 0.88f * R;
+        lock.startNewSubPath (x0, cy - 0.4f * R);
+        lock.quadraticTo (x0 + (float) s * 0.08f * R, cy + 0.4f * R, x0 - (float) s * 0.05f * R, cy + 1.0f * R);
+        lock.lineTo (x0 - (float) s * 0.2f * R, cy + 0.6f * R);
+        lock.quadraticTo (x0 - (float) s * 0.18f * R, cy, x0 - (float) s * 0.22f * R, cy - 0.4f * R);
+        lock.closeSubPath();
+        g.fillPath (lock);
+    }
+
+    juce::Path shine;
+    shine.addCentredArc (cx - 0.1f * R, cy - 0.45f * R, 0.55f * R, 0.3f * R, 0.0f, -1.3f, -0.4f, true);
+    g.setColour (hairHi.withAlpha (0.8f));
+    g.strokePath (shine, juce::PathStrokeType (5.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+
+    // --- eyes
+    const float eyeY = cy + 0.12f * R;
+    const float rage = mood == 4 ? 1.0f : (mood == 3 ? 0.6f : 0.0f);
+    const float lidDrop[] = { 0.0f, 0.0f, 0.38f, 0.1f, 0.0f };
+    const float browIn[]  = { 0.0f, -0.03f, 0.06f, 0.12f, 0.17f };
+
+    for (int s = -1; s <= 1; s += 2)
+    {
+        const float ex = cx + (float) s * 0.36f * R;
+        const float ew = 0.3f * R, eh = 0.34f * R;
+        const float innerSign = (float) -s;   // direction toward the nose
+
+        if (mood == 0)
+        {
+            juce::Path closed;   // sleepy closed eyes
+            closed.addCentredArc (ex, eyeY - 0.02f * R, ew * 0.45f, eh * 0.25f, 0.0f,
+                                  juce::MathConstants<float>::halfPi + 0.9f, juce::MathConstants<float>::halfPi * 3.0f - 0.9f, true);
+            g.setColour (ink);
+            g.strokePath (closed, juce::PathStrokeType (3.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        }
+        else
+        {
+            juce::Path eye;
+            eye.addEllipse (ex - ew * 0.5f, eyeY - eh * 0.5f, ew, eh);
+            g.setColour (juce::Colours::white);
+            g.fillPath (eye);
+
+            {
+                juce::Graphics::ScopedSaveState clip (g);
+                g.reduceClipRegion (eye);
+
+                const auto irisTop = juce::Colour (0xff6b4bd6).interpolatedWith (juce::Colour (0xffd0102a), rage);
+                const auto irisBot = juce::Colour (0xffff8fc8).interpolatedWith (juce::Colour (0xffff8a3a), rage);
+                const float iw = ew * 0.66f, ih = eh * 0.92f;
+                const float ix = ex + innerSign * 0.02f * R, iy = eyeY + eh * 0.05f;
+                g.setGradientFill (juce::ColourGradient (irisTop, ix, iy - ih * 0.5f, irisBot, ix, iy + ih * 0.5f, false));
+                g.fillEllipse (ix - iw * 0.5f, iy - ih * 0.5f, iw, ih);
+
+                const float pw = iw * (0.45f - 0.28f * rage), ph = ih * (0.5f - 0.3f * rage);
+                g.setColour (ink);
+                g.fillEllipse (ix - pw * 0.5f, iy - ph * 0.5f, pw, ph);
+
+                g.setColour (juce::Colours::white);
+                g.fillEllipse (ix - iw * 0.35f, iy - ih * 0.35f, iw * 0.32f, iw * 0.32f);
+                g.fillEllipse (ix + iw * 0.08f, iy + ih * 0.12f, iw * 0.14f, iw * 0.14f);
+
+                if (lidDrop[mood] > 0.0f)   // unimpressed half-lid
+                {
+                    g.setColour (skin);
+                    g.fillRect (ex - ew, eyeY - eh, ew * 2.0f, eh * (0.5f + lidDrop[mood]));
+                }
+            }
+
+            const float lidY = eyeY - eh * 0.5f + eh * lidDrop[mood];
+            juce::Path lash;
+            lash.startNewSubPath (ex - innerSign * ew * 0.62f, lidY + eh * 0.1f);
+            lash.quadraticTo (ex, lidY - eh * 0.18f, ex + innerSign * ew * 0.6f, lidY + eh * 0.12f + browIn[mood] * R * 0.3f);
+            g.setColour (ink);
+            g.strokePath (lash, juce::PathStrokeType (4.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+            g.drawLine (ex - ew * 0.3f, eyeY + eh * 0.52f, ex + ew * 0.3f, eyeY + eh * 0.52f, 1.5f);
+        }
+
+        // glasses
+        const float gr = 0.23f * R;
+        g.setColour (ink);
+        g.drawEllipse (ex - gr, eyeY - gr, gr * 2.0f, gr * 2.0f, 2.5f);
+        if (mood >= 3)
+        {
+            g.setColour (juce::Colours::white.withAlpha (mood == 4 ? 0.95f : 0.5f));
+            if (mood == 4)
+                g.fillEllipse (ex - gr, eyeY - gr, gr * 2.0f, gr * 2.0f);   // the classic opaque glare
+            g.setColour (juce::Colours::white);
+            g.drawLine (ex - gr * 0.5f, eyeY + gr * 0.2f, ex + gr * 0.1f, eyeY - gr * 0.5f, 3.0f);
+            g.drawLine (ex - gr * 0.1f, eyeY + gr * 0.5f, ex + gr * 0.5f, eyeY - gr * 0.2f, 2.0f);
+        }
+
+        // brows (drawn over the bangs, anime style)
+        const float by = cy - 0.2f * R;
+        juce::Path brow;
+        brow.startNewSubPath (ex - innerSign * 0.17f * R, by);
+        brow.quadraticTo (ex, by - 0.06f * R, ex + innerSign * 0.15f * R, by + browIn[mood] * R);
+        g.setColour (ink);
+        g.strokePath (brow, juce::PathStrokeType (3.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    }
+    g.setColour (ink);
+    g.drawLine (cx - 0.13f * R, eyeY - 0.02f * R, cx + 0.13f * R, eyeY - 0.02f * R, 2.5f);   // glasses bridge
+
+    // nose
+    g.drawLine (cx + 0.02f * R, cy + 0.36f * R, cx - 0.02f * R, cy + 0.4f * R, 2.0f);
+
+    // --- mouth
+    const float my = cy + 0.58f * R;
+    if (mood == 0)
+    {
+        g.fillEllipse (cx - 0.04f * R, my - 0.03f * R, 0.08f * R, 0.07f * R);
+    }
+    else if (mood == 1)
+    {
+        juce::Path m;   // little cat smile
+        m.startNewSubPath (cx - 0.14f * R, my - 0.02f * R);
+        m.quadraticTo (cx - 0.07f * R, my + 0.07f * R, cx, my);
+        m.quadraticTo (cx + 0.07f * R, my + 0.07f * R, cx + 0.14f * R, my - 0.02f * R);
+        g.strokePath (m, juce::PathStrokeType (2.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    }
+    else if (mood == 2)
+    {
+        juce::Path m;   // unimpressed
+        m.startNewSubPath (cx - 0.13f * R, my + 0.02f * R);
+        m.quadraticTo (cx, my - 0.03f * R, cx + 0.13f * R, my + 0.03f * R);
+        g.strokePath (m, juce::PathStrokeType (2.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    }
+    else
+    {
+        const float w = (mood == 4 ? 0.46f : 0.3f) * R * pulse;
+        const float h = (mood == 4 ? 0.32f : 0.18f) * R * pulse;
+        juce::Path m;
+        m.startNewSubPath (cx - w * 0.5f, my - h * 0.2f);
+        m.lineTo (cx + w * 0.5f, my - h * 0.2f);
+        m.quadraticTo (cx + w * 0.3f, my + h, cx, my + h);
+        m.quadraticTo (cx - w * 0.3f, my + h, cx - w * 0.5f, my - h * 0.2f);
+        m.closeSubPath();
+        g.setColour (juce::Colour (0xff5a0a1a));
+        g.fillPath (m);
+        {
+            juce::Graphics::ScopedSaveState clip (g);
+            g.reduceClipRegion (m);
+            g.setColour (juce::Colour (0xffe8708a));
+            g.fillEllipse (cx - w * 0.3f, my + h * 0.45f, w * 0.6f, h * 0.7f);
+        }
+        if (mood == 4)   // fangs
+        {
+            g.setColour (juce::Colours::white);
+            for (int s = -1; s <= 1; s += 2)
+            {
+                juce::Path fang;
+                const float fx = cx + (float) s * w * 0.3f;
+                fang.addTriangle (fx - 0.04f * R, my - h * 0.2f, fx + 0.04f * R, my - h * 0.2f, fx, my + h * 0.25f);
+                g.fillPath (fang);
+            }
+        }
+        g.setColour (ink);
+        g.strokePath (m, juce::PathStrokeType (2.5f));
+    }
+
+    // --- extras
+    if (mood == 2)
+        drawDrop (g, cx + 0.98f * R, cy - 0.35f * R, 0.12f * R);
+
+    if (mood >= 3)   // anger vein
+    {
+        const juce::Point<float> v (cx + 0.5f * R, cy - 0.62f * R);
+        const float vs = 0.1f * R * (mood == 4 ? 1.0f + 0.15f * std::sin (t * 12.0f) : 1.0f);
+        g.setColour (juce::Colour (0xffe0102a));
+        for (int q = 0; q < 4; ++q)
+        {
+            const float a = juce::MathConstants<float>::halfPi * (float) q + 0.785f;
+            const juce::Point<float> dir (std::cos (a), std::sin (a)), perp (-dir.y, dir.x);
+            juce::Path arc;
+            const auto p1 = v + dir * (vs * 0.5f) + perp * (vs * 0.6f);
+            const auto p2 = v + dir * (vs * 0.5f) - perp * (vs * 0.6f);
+            const auto ctrl = v + dir * (vs * 0.15f);
+            arc.startNewSubPath (p1);
+            arc.quadraticTo (ctrl, p2);
+            g.strokePath (arc, juce::PathStrokeType (4.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        }
+    }
+
+    if (mood == 0)   // floating zzz
+    {
+        g.setColour (ink.withAlpha (0.7f));
+        for (int i = 0; i < 3; ++i)
+        {
+            const float ph = std::fmod (t * 0.4f + (float) i / 3.0f, 1.0f);
+            g.setFont (fontOf (14.0f + ph * 14.0f));
+            g.drawText ("z", juce::Rectangle<float> (cx + 0.9f * R + ph * 40.0f, cy - 0.9f * R - ph * 60.0f, 30.0f, 30.0f), juce::Justification::centred);
+        }
+    }
+}
+
+void ShizukaEditor::drawBubble (juce::Graphics& g, int mood)
+{
+    const char* lines[] = { "zzz...", "shh~", "Shhh!", "SHHHHH!!", "SILENCE." };
+    const float sizes[] = { 18.0f, 24.0f, 28.0f, 32.0f, 38.0f };
+
+    const juce::Rectangle<float> box (stage.getRight() - 215.0f, 22.0f, 195.0f, 78.0f);
+    const auto c = box.getCentre();
+
+    juce::Path bubble;
+    if (mood == 4)
+    {
+        const int pts = 22;
+        for (int i = 0; i <= pts * 2; ++i)
+        {
+            const float a = juce::MathConstants<float>::pi * (float) i / (float) pts;
+            const float r = (i % 2 == 0) ? 1.0f : 0.78f;
+            const float px = c.x + std::cos (a) * box.getWidth() * 0.55f * r;
+            const float py = c.y + std::sin (a) * box.getHeight() * 0.62f * r;
+            if (i == 0) bubble.startNewSubPath (px, py); else bubble.lineTo (px, py);
+        }
+        bubble.closeSubPath();
+    }
+    else
+    {
+        bubble.addEllipse (box);
+        juce::Path tail;
+        tail.addTriangle (box.getX() + 40.0f, box.getBottom() - 12.0f, box.getX() + 70.0f, box.getBottom() - 6.0f, box.getX() + 10.0f, box.getBottom() + 26.0f);
+        bubble.addPath (tail);
+    }
+
+    g.setColour (mood == 4 ? juce::Colour (0xffe0102a) : juce::Colours::white);
+    g.fillPath (bubble);
+    g.setColour (ink);
+    g.strokePath (bubble, juce::PathStrokeType (3.0f));
+
+    g.setColour (mood == 4 ? juce::Colours::white : ink);
+    g.setFont (fontOf (sizes[mood]));
+    g.drawText (lines[mood], box, juce::Justification::centred);
 }
