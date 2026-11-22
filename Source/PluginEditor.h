@@ -25,9 +25,15 @@ private:
     float knobValue() const;
     static int moodFor (float k);
 
-    void drawBackground (juce::Graphics&, float k, float rage);
+    void drawSky (juce::Graphics&, float k, float rage);
+    void drawMoon (juce::Graphics&, float k);
+    void drawClouds (juce::Graphics&, int layer, float rage);
+    void drawMountains (juce::Graphics&, float rage);
+    void drawCritters (juce::Graphics&, float rage);
+    void drawBloodPool (juce::Graphics&, float k);
     void drawGirl (juce::Graphics&, int mood, float rage);
     void drawHead (juce::Graphics&, int mood, float rage);
+    void drawArt (juce::Graphics&, float rage);
     void drawPanel (juce::Graphics&, float k, int mood, float rage);
     void drawBlood (juce::Graphics&, float k, int mood);
 
@@ -37,6 +43,8 @@ private:
     juce::Slider knob;
     juce::Label knobLabel;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> knobAttachment;
+
+    juce::Image artCalm, artRage;
 
     std::array<float, ShizukaProcessor::numBands> bandsUI {};
     juce::Random rng;

@@ -10,13 +10,17 @@ The spectrum behind her shows what's happening. Bars under the dashed QUIET LINE
 
 ## Her moods
 
-| Knob | Mood |
+| Knob | What happens |
 |---|---|
-| off | serene, eyes closed, everything blue and sparkly |
-| low | sweet smile, "hehe, shh~" |
-| mid | pouting, "...hey. too loud." |
-| high | yandere: shadowed eyes, empty pupils, blood on her cheek and sweater, drips from the top of the screen |
-| max | **SILENCE.** Glowing red eyes, crazy grin, blood rain, splatters everywhere, screen shake |
+| off | eyes closed, peaceful; blue sky, drifting clouds, snowy mountains, birds, flowers |
+| low | sparkly eyes, happy smile, "hehe, shh~" |
+| mid | pout and squint; a blood moon starts rising behind the mountains |
+| high | yandere shadow over her eyes, empty pupils, blood on her face, dress and hair; the sky turns red, bats replace birds, blood drips from the top of the screen |
+| max | **SILENCE.** Slit pupils, glowing eyes, blood tears, crazy grin. The moon bleeds, blood rains, splatters everywhere, a dripping blood frame, screen shake |
+
+## Custom character art
+
+The character is drawn in code. For illustration-quality art, put `girl_calm.png` (and optionally `girl_rage.png`) in `art/` and push. See `art/README.md`. Only use art you own or commissioned.
 
 ## Tech
 

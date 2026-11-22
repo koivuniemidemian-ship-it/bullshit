@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.22)
 # Must be set before project() to take effect.
 set(CMAKE_OSX_DEPLOYMENT_TARGET "10.13" CACHE STRING "Minimum macOS version")
 
-project(HushChan VERSION 0.4.0 LANGUAGES C CXX)
+project(HushChan VERSION 0.5.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -48,6 +48,14 @@ target_compile_definitions(HushChan PUBLIC
     JUCE_USE_CURL=0
     JUCE_VST3_CAN_REPLACE_VST2=0
     JUCE_DISPLAY_SPLASH_SCREEN=0)
+
+# Optional artwork: drop girl_calm.png / girl_rage.png into art/ and they replace the drawn character
+file(GLOB HUSH_ART_FILES CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/art/*.png")
+if(HUSH_ART_FILES)
+    juce_add_binary_data(HushArt SOURCES ${HUSH_ART_FILES})
+    target_link_libraries(HushChan PRIVATE HushArt)
+    target_compile_definitions(HushChan PRIVATE HUSH_HAS_ART=1)
+endif()
 
 target_link_libraries(HushChan
     PRIVATE
