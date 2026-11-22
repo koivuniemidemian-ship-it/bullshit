@@ -1,5 +1,6 @@
 #include "PluginEditor.h"
 #include "Girl.h"
+#include "AnimeBlood.h"
 #include <cmath>
 
 #if defined (HUSH_HAS_ART)
@@ -87,21 +88,7 @@ namespace
 
     void paintSplat (juce::Graphics& g, float x, float y, float r, int seed, float alpha = 1.0f, float dripLen = 0.0f)
     {
-        auto p = splat (x, y, r, seed);
-        if (dripLen > 0.0f)
-        {
-            const float dw = juce::jmax (2.5f, r * 0.28f);
-            p.addRoundedRectangle (x - dw * 0.5f, y, dw, r + dripLen, dw * 0.5f);
-            p.addEllipse (x - dw * 0.8f, y + r + dripLen - dw * 0.6f, dw * 1.6f, dw * 1.8f);
-        }
-        g.setColour (bloodDk.withAlpha (alpha));
-        g.fillPath (p, juce::AffineTransform::translation (1.5f, 2.0f));
-        g.setColour (blood.withAlpha (alpha));
-        g.fillPath (p);
-        g.setColour (bloodHi.withAlpha (alpha));
-        g.fillPath (splat (x, y, r * 0.55f, seed + 7));
-        g.setColour (juce::Colours::white.withAlpha (0.55f * alpha));
-        g.fillEllipse (x - r * 0.35f, y - r * 0.4f, r * 0.24f, r * 0.15f);
+        AnimeBlood::splat (g, x, y, r, seed, dripLen, alpha);
     }
 
     void drawCloud (juce::Graphics& g, float x, float y, float s, Colour top, Colour bot, Colour rim, float hi)
@@ -152,14 +139,25 @@ KawaiiLookAndFeel::KawaiiLookAndFeel()
 void KawaiiLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int w, int h,
                                           float pos, float startA, float endA, juce::Slider&)
 {
+    const float now = (float) (juce::Time::getMillisecondCounterHiRes() * 0.001);
     auto b = juce::Rectangle<float> ((float) x, (float) y, (float) w, (float) h);
     const float r = juce::jmin (b.getWidth(), b.getHeight()) * 0.5f - 20.0f;
     const auto c = b.getCentre();
     const float angle = startA + pos * (endA - startA);
     const float rage = smoothstep (0.3f, 0.9f, pos);
-
-    const float ledR = r * 0.9f, bodyR = r * 0.72f, capR = r * 0.4f;
     auto polar = [&] (float a, float rad) { return juce::Point<float> (c.x + std::sin (a) * rad, c.y - std::cos (a) * rad); };
+
+    auto sparkle = [&] (float sx, float sy, float size, Colour col)
+    {
+        Path st;
+        st.addStar ({ sx, sy }, 4, size * 0.18f, size, 0.0f);
+        g.setColour (col.withAlpha (0.35f));
+        g.fillEllipse (sx - size * 0.6f, sy - size * 0.6f, size * 1.2f, size * 1.2f);
+        g.setColour (col);
+        g.fillPath (st);
+        g.setColour (juce::Colours::white);
+        g.fillEllipse (sx - size * 0.15f, sy - size * 0.15f, size * 0.3f, size * 0.3f);
+    };
 
     // scale numbers
     g.setFont (fontOf (11.0f));
@@ -171,102 +169,156 @@ void KawaiiLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int w
         g.drawText (juce::String (i), juce::Rectangle<float> (p.x - 10.0f, p.y - 7.0f, 20.0f, 14.0f), juce::Justification::centred);
     }
 
-    // drop shadow
+    // glow + shadow
     for (int i = 4; i >= 1; --i)
     {
         g.setColour (juce::Colours::black.withAlpha (0.08f * (float) i));
         const float sr = r + (float) i * 2.5f;
         g.fillEllipse (c.x - sr, c.y - sr + 6.0f, sr * 2.0f, sr * 2.0f);
     }
-
-    // bezel
-    g.setGradientFill (juce::ColourGradient (Colour (0xff3a3550), c.x, c.y - r, Colour (0xff0b0912), c.x, c.y + r, false));
-    g.fillEllipse (c.x - r, c.y - r, r * 2.0f, r * 2.0f);
-    Path rimHi;
-    rimHi.addCentredArc (c.x, c.y, r - 1.5f, r - 1.5f, 0.0f, -1.2f, 1.2f, true);
-    g.setColour (juce::Colours::white.withAlpha (0.35f));
-    g.strokePath (rimHi, juce::PathStrokeType (2.0f));
-    g.setColour (juce::Colours::black);
-    g.drawEllipse (c.x - r, c.y - r, r * 2.0f, r * 2.0f, 2.0f);
-
-    // LED ring
-    const int leds = 31;
-    for (int i = 0; i < leds; ++i)
+    const auto glowCol = mix (Colour (0xffb89cff), Colour (0xffff2040), rage);
+    for (int i = 3; i >= 1; --i)
     {
-        const float f = (float) i / (float) (leds - 1);
-        const float a = startA + (endA - startA) * f;
-        const auto p = polar (a, ledR);
-        const bool lit = f <= pos + 0.001f && pos > 0.001f;
-        const Colour col = f < 0.5f ? mix (Colour (0xff4fe3ff), Colour (0xffff6fd0), f * 2.0f)
-                                    : mix (Colour (0xffff6fd0), Colour (0xffff1030), (f - 0.5f) * 2.0f);
-        if (lit)
-        {
-            g.setColour (col.withAlpha (0.25f));
-            g.fillEllipse (p.x - 7.0f, p.y - 7.0f, 14.0f, 14.0f);
-            g.setColour (col);
-            g.fillEllipse (p.x - 3.5f, p.y - 3.5f, 7.0f, 7.0f);
-            g.setColour (juce::Colours::white.withAlpha (0.8f));
-            g.fillEllipse (p.x - 1.5f, p.y - 2.0f, 2.5f, 2.5f);
-        }
-        else
-        {
-            g.setColour (Colour (0xff22202e));
-            g.fillEllipse (p.x - 3.0f, p.y - 3.0f, 6.0f, 6.0f);
-        }
+        const float gr = r + (float) i * 5.0f;
+        g.setColour (glowCol.withAlpha (0.06f + 0.04f * std::sin (now * 2.0f)));
+        g.fillEllipse (c.x - gr, c.y - gr, gr * 2.0f, gr * 2.0f);
     }
 
-    // knob body: brushed chrome turning blood-tinted
-    const auto chromeHi = mix (Colour (0xfff4f6ff), Colour (0xffffc0c0), rage);
-    const auto chromeLo = mix (Colour (0xff7d8296), Colour (0xff5a1018), rage);
-    g.setGradientFill (juce::ColourGradient (chromeHi, c.x - bodyR * 0.35f, c.y - bodyR * 0.45f, chromeLo, c.x + bodyR, c.y + bodyR, true));
+    // holographic rainbow ring (slowly shifting hues)
+    const int segs = 96;
+    for (int i = 0; i < segs; ++i)
+    {
+        const float a0 = 2.0f * pi * (float) i / (float) segs, a1 = 2.0f * pi * (float) (i + 1) / (float) segs;
+        const float hue = std::fmod ((float) i / (float) segs + now * 0.05f, 1.0f);
+        const auto col = mix (Colour::fromHSV (hue, 0.35f, 1.0f, 1.0f), Colour::fromHSV (std::fmod (hue * 0.1f, 0.06f), 0.85f, 0.95f, 1.0f), rage);
+        Path seg;
+        seg.addCentredArc (c.x, c.y, r * 0.93f, r * 0.93f, 0.0f, a0, a1 + 0.01f, true);
+        g.setColour (col);
+        g.strokePath (seg, juce::PathStrokeType (r * 0.14f));
+    }
+    g.setColour (juce::Colours::black.withAlpha (0.6f));
+    g.drawEllipse (c.x - r, c.y - r, r * 2.0f, r * 2.0f, 1.5f);
+    g.drawEllipse (c.x - r * 0.86f, c.y - r * 0.86f, r * 1.72f, r * 1.72f, 1.2f);
+
+    // value arc: hot pink -> blood red, with a glowing head
+    {
+        Path val;
+        val.addCentredArc (c.x, c.y, r * 0.93f, r * 0.93f, 0.0f, startA, angle, true);
+        g.setColour (mix (Colour (0xffff4fb0), AnimeBlood::red, rage).withAlpha (0.85f));
+        g.strokePath (val, juce::PathStrokeType (r * 0.07f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        const auto head = polar (angle, r * 0.93f);
+        sparkle (head.x, head.y, 9.0f, juce::Colours::white);
+    }
+
+    // knob body: pearlescent with glitter flakes
+    const float bodyR = r * 0.78f;
+    juce::ColourGradient pearl (mix (Colour (0xfffdf6ff), Colour (0xffffd0d0), rage), c.x - bodyR * 0.4f, c.y - bodyR * 0.5f,
+                                mix (Colour (0xffa9a2d8), Colour (0xff5a0a18), rage), c.x + bodyR, c.y + bodyR, true);
+    pearl.addColour (0.5, mix (Colour (0xffe0d4ff), Colour (0xffd06070), rage));
+    g.setGradientFill (pearl);
     g.fillEllipse (c.x - bodyR, c.y - bodyR, bodyR * 2.0f, bodyR * 2.0f);
 
-    // knurled grip, rotates with the knob
-    for (int i = 0; i < 64; ++i)
+    juce::Random fl (2024);
+    for (int i = 0; i < 140; ++i)
     {
-        const float a = angle + 2.0f * pi * (float) i / 64.0f;
-        const auto p1 = polar (a, bodyR * 0.86f), p2 = polar (a, bodyR * 0.99f);
-        g.setColour ((i % 2 == 0) ? juce::Colours::black.withAlpha (0.35f) : juce::Colours::white.withAlpha (0.35f));
-        g.drawLine (p1.x, p1.y, p2.x, p2.y, 1.6f);
+        const float a = fl.nextFloat() * 2.0f * pi, d = std::sqrt (fl.nextFloat()) * bodyR * 0.95f;
+        const float px = c.x + std::cos (a) * d, py = c.y + std::sin (a) * d;
+        const float tw = std::pow (0.5f + 0.5f * std::sin (now * (1.5f + 3.0f * fl.nextFloat()) + fl.nextFloat() * 6.28f), 6.0f);
+        const auto col = mix (Colour::fromHSV (fl.nextFloat(), 0.5f, 1.0f, 1.0f), Colour (0xffff6070), rage);
+        g.setColour (col.withAlpha (0.35f + 0.65f * tw));
+        const float s = 1.0f + 1.6f * fl.nextFloat();
+        g.fillRect (px - s * 0.5f, py - s * 0.5f, s, s);
+        if (tw > 0.85f)
+            sparkle (px, py, 4.5f, juce::Colours::white);
     }
-    g.setColour (juce::Colours::black.withAlpha (0.7f));
-    g.drawEllipse (c.x - bodyR, c.y - bodyR, bodyR * 2.0f, bodyR * 2.0f, 1.5f);
 
-    // engraved pointer
-    const auto pa = polar (angle, capR * 1.1f), pb = polar (angle, bodyR * 0.8f);
-    g.setColour (juce::Colours::black.withAlpha (0.7f));
-    g.drawLine (pa.x, pa.y, pb.x, pb.y, 4.5f);
-    g.setColour (mix (Colour (0xff4fe3ff), bloodHi, rage));
-    g.drawLine (pa.x + 0.5f, pa.y - 0.5f, pb.x + 0.5f, pb.y - 0.5f, 2.0f);
+    // knurled rim that turns with the knob
+    for (int i = 0; i < 48; ++i)
+    {
+        const float a = angle + 2.0f * pi * (float) i / 48.0f;
+        const auto p1 = polar (a, bodyR * 0.9f), p2 = polar (a, bodyR);
+        g.setColour ((i % 2 == 0) ? juce::Colours::white.withAlpha (0.6f) : Colour (0xff4a3a7a).withAlpha (0.5f));
+        g.drawLine (p1.x, p1.y, p2.x, p2.y, 1.5f);
+    }
+    g.setColour (Colour (0xff2a1d3a));
+    g.drawEllipse (c.x - bodyR, c.y - bodyR, bodyR * 2.0f, bodyR * 2.0f, 2.0f);
 
-    // glossy cap with a crescent moon that turns to blood
-    g.setGradientFill (juce::ColourGradient (mix (Colour (0xff3b4a9e), Colour (0xff4a0008), rage), c.x, c.y - capR,
-                                             mix (Colour (0xff10163a), Colour (0xff120004), rage), c.x, c.y + capR, false));
-    g.fillEllipse (c.x - capR, c.y - capR, capR * 2.0f, capR * 2.0f);
-    const float mr = capR * 0.55f;
-    g.setColour (mix (Colour (0xfffff3b0), bloodHi, rage));
+    // faceted crystal cap
+    const float capR = r * 0.42f;
+    const int facets = 8;
+    const auto gemA = mix (Colour (0xff9fd8ff), Colour (0xffff3048), rage);
+    const auto gemB = mix (Colour (0xffc7a6ff), Colour (0xff7a0012), rage);
+    for (int i = 0; i < facets; ++i)
+    {
+        const float a0 = angle + 2.0f * pi * (float) i / (float) facets, a1 = angle + 2.0f * pi * (float) (i + 1) / (float) facets;
+        Path tri;
+        tri.addTriangle (c.x, c.y, c.x + std::sin (a0) * capR, c.y - std::cos (a0) * capR, c.x + std::sin (a1) * capR, c.y - std::cos (a1) * capR);
+        const float light = 0.5f + 0.5f * std::cos (a0 + 0.8f);
+        g.setColour (mix (gemB, gemA, light).brighter (0.15f * light));
+        g.fillPath (tri);
+    }
+    Path table;
+    for (int i = 0; i < facets; ++i)
+    {
+        const float a = angle + 2.0f * pi * (float) i / (float) facets;
+        const float px = c.x + std::sin (a) * capR * 0.5f, py = c.y - std::cos (a) * capR * 0.5f;
+        if (i == 0) table.startNewSubPath (px, py); else table.lineTo (px, py);
+    }
+    table.closeSubPath();
+    g.setColour (gemA.brighter (0.3f).withAlpha (0.85f));
+    g.fillPath (table);
+    g.setColour (juce::Colours::white.withAlpha (0.5f));
+    g.strokePath (table, juce::PathStrokeType (1.0f));
+    for (int i = 0; i < facets; ++i)
+    {
+        const float a = angle + 2.0f * pi * (float) i / (float) facets;
+        g.drawLine (c.x + std::sin (a) * capR * 0.5f, c.y - std::cos (a) * capR * 0.5f, c.x + std::sin (a) * capR, c.y - std::cos (a) * capR, 0.8f);
+    }
+    g.setColour (Colour (0xff2a1d3a));
+    g.drawEllipse (c.x - capR, c.y - capR, capR * 2.0f, capR * 2.0f, 1.8f);
+    // silver crescent inlay
+    const float mr = capR * 0.32f;
+    g.setColour (juce::Colours::white);
     g.fillEllipse (c.x - mr, c.y - mr, mr * 2.0f, mr * 2.0f);
-    g.setColour (mix (Colour (0xff2c3a86), Colour (0xff3a0008), rage));
-    g.fillEllipse (c.x - mr * 0.55f, c.y - mr * 1.1f, mr * 1.8f, mr * 1.8f);
-    g.setColour (juce::Colours::white.withAlpha (0.45f));
-    g.fillEllipse (c.x - capR * 0.6f, c.y - capR * 0.85f, capR * 1.0f, capR * 0.5f);
-    g.setColour (juce::Colours::black);
-    g.drawEllipse (c.x - capR, c.y - capR, capR * 2.0f, capR * 2.0f, 1.5f);
+    g.setColour (gemA.brighter (0.3f));
+    g.fillEllipse (c.x - mr * 0.45f, c.y - mr * 1.15f, mr * 1.8f, mr * 1.8f);
+
+    // pointer gem
+    const auto tip = polar (angle, bodyR * 0.72f);
+    g.setColour (Colour (0xff2a1d3a));
+    g.fillEllipse (tip.x - 6.0f, tip.y - 6.0f, 12.0f, 12.0f);
+    g.setColour (mix (Colour (0xffff4fb0), AnimeBlood::bright, rage));
+    g.fillEllipse (tip.x - 4.5f, tip.y - 4.5f, 9.0f, 9.0f);
+    g.setColour (juce::Colours::white);
+    g.fillEllipse (tip.x - 2.5f, tip.y - 3.0f, 3.0f, 3.0f);
+
+    // specular glare
+    Path glare;
+    glare.addCentredArc (c.x, c.y, bodyR * 0.82f, bodyR * 0.82f, 0.0f, -1.9f, -0.6f, true);
+    g.setColour (juce::Colours::white.withAlpha (0.55f));
+    g.strokePath (glare, juce::PathStrokeType (3.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+
+    // twinkling star flares around the rim
+    for (int i = 0; i < 6; ++i)
+    {
+        const float ph = now * 1.3f + (float) i * 1.7f;
+        const float tw = std::pow (0.5f + 0.5f * std::sin (ph), 4.0f);
+        if (tw < 0.05f) continue;
+        const auto p = polar ((float) i * 1.05f + 0.3f, r * (0.98f + 0.08f * std::sin ((float) i)));
+        sparkle (p.x, p.y, 4.0f + 9.0f * tw, mix (Colour (0xfffff2b0), Colour (0xffff8080), rage).withAlpha (tw));
+    }
 
     // the knob bleeds too
     if (pos > 0.55f)
     {
         const float a = (pos - 0.55f) / 0.45f;
-        paintSplat (g, c.x + bodyR * 0.45f, c.y - bodyR * 0.5f, 6.0f + 8.0f * a, 31, 0.95f);
+        AnimeBlood::splat (g, c.x + bodyR * 0.5f, c.y - bodyR * 0.45f, 5.0f + 7.0f * a, 31);
         juce::Random dr (17);
         for (int i = 0; i < 4; ++i)
         {
             const float ang = pi * (0.65f + 0.7f * dr.nextFloat());
-            const juce::Point<float> p (c.x + std::sin (ang) * r * 0.97f, c.y - std::cos (ang) * r * 0.97f);
-            const float len = a * (8.0f + 22.0f * dr.nextFloat());
-            g.setColour (blood);
-            g.fillRoundedRectangle (p.x - 2.5f, p.y - 2.0f, 5.0f, len + 2.0f, 2.5f);
-            g.fillEllipse (p.x - 4.0f, p.y + len - 3.0f, 8.0f, 9.0f);
+            const auto p = polar (ang, r * 0.97f);
+            AnimeBlood::drip (g, p.x, p.y - 2.0f, a * (8.0f + 22.0f * dr.nextFloat()), 5.0f);
         }
     }
 }
@@ -449,9 +501,7 @@ void ShizukaEditor::drawMoon (juce::Graphics& g, float k)
             const float x = mx + std::cos (a) * mr * 0.96f, y = my + std::sin (a) * mr * 0.96f;
             const float wv = 5.0f + 7.0f * dr.nextFloat();
             const float len = bleed * (40.0f + 180.0f * dr.nextFloat()) * (0.94f + 0.06f * std::sin (t * 1.3f + (float) i));
-            g.setColour (Colour (0xff8a000e));
-            g.fillRoundedRectangle (x - wv * 0.5f, y - 6.0f, wv, len + 6.0f, wv * 0.5f);
-            g.fillEllipse (x - wv * 0.85f, y + len - wv, wv * 1.7f, wv * 2.0f);
+            AnimeBlood::drip (g, x, y - 6.0f, len + 6.0f, wv);
         }
     }
 }
@@ -735,15 +785,7 @@ void ShizukaEditor::drawBlood (juce::Graphics& g, float k, int mood)
         const float x = W * ((float) i + 0.5f) / (float) drips + (dr.nextFloat() - 0.5f) * 18.0f;
         const float wv = 5.0f + dr.nextFloat() * 14.0f;
         const float len = H * 0.42f * amount * (0.12f + 0.88f * dr.nextFloat()) * (0.92f + 0.08f * std::sin (t * 1.5f + (float) i));
-        g.setColour (bloodDk);
-        g.fillRoundedRectangle (x - wv * 0.5f + 1.5f, -10.0f, wv, len + 10.0f, wv * 0.5f);
-        g.setColour (blood);
-        g.fillRoundedRectangle (x - wv * 0.5f, -10.0f, wv, len + 10.0f, wv * 0.5f);
-        g.fillEllipse (x - wv * 0.85f, len - wv * 0.8f, wv * 1.7f, wv * 1.9f);
-        g.setColour (bloodHi.withAlpha (0.7f));
-        g.fillRoundedRectangle (x - wv * 0.25f, -10.0f, wv * 0.22f, len, 1.0f);
-        g.setColour (juce::Colours::white.withAlpha (0.4f));
-        g.fillEllipse (x - wv * 0.4f, len - wv * 0.4f, wv * 0.35f, wv * 0.3f);
+        AnimeBlood::drip (g, x, -10.0f, len + 10.0f, wv);
     }
 
     Path band;   // wavy pooled band along the top
@@ -752,8 +794,10 @@ void ShizukaEditor::drawBlood (juce::Graphics& g, float k, int mood)
         band.lineTo (x, (8.0f + 22.0f * amount) + 6.0f * std::sin (x * 0.05f + t));
     band.lineTo (W, 0.0f);
     band.closeSubPath();
-    g.setColour (blood);
+    g.setColour (AnimeBlood::red);
     g.fillPath (band);
+    g.setColour (AnimeBlood::dark);
+    g.strokePath (band, juce::PathStrokeType (3.0f));
 
     if (mood >= 3)   // smears
     {
@@ -792,7 +836,7 @@ void ShizukaEditor::drawBlood (juce::Graphics& g, float k, int mood)
             const float speed = 280.0f + rr.nextFloat() * 420.0f;
             const float y = std::fmod (t * speed + rr.nextFloat() * H, H + 60.0f) - 30.0f;
             const float s = 2.0f + rr.nextFloat() * 3.5f;
-            g.setColour (bloodHi.withAlpha (0.85f));
+            g.setColour (AnimeBlood::red);
             g.fillRoundedRectangle (x - s * 0.5f, y - s * 5.0f, s, s * 6.0f, s * 0.5f);
         }
     }
@@ -815,8 +859,10 @@ void ShizukaEditor::drawBlood (juce::Graphics& g, float k, int mood)
         inner.closeSubPath();
         frame.addPath (inner);
         frame.setUsingNonZeroWinding (false);
-        g.setColour (blood.withAlpha (0.9f));
+        g.setColour (AnimeBlood::red.withAlpha (0.92f));
         g.fillPath (frame);
+        g.setColour (AnimeBlood::dark);
+        g.strokePath (inner, juce::PathStrokeType (3.0f));
 
         g.setColour (Colour (0xffff0020).withAlpha (0.08f + 0.08f * std::sin (t * 10.0f)));
         g.fillAll();
