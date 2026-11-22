@@ -30,9 +30,7 @@ private:
     void drawClouds (juce::Graphics&, int layer, float rage);
     void drawMountains (juce::Graphics&, float rage);
     void drawCritters (juce::Graphics&, float rage);
-    void drawBloodPool (juce::Graphics&, float k);
     void drawGirl (juce::Graphics&, int mood, float rage);
-    void drawHead (juce::Graphics&, int mood, float rage);
     void drawArt (juce::Graphics&, float rage);
     void drawPanel (juce::Graphics&, float k, int mood, float rage);
     void drawBlood (juce::Graphics&, float k, int mood);
