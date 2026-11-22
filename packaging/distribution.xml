@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <installer-gui-script minSpecVersion="2">
-    <title>Shizuka</title>
+    <title>Hush-chan</title>
     <welcome file="welcome.html" mime-type="text/html"/>
     <conclusion file="conclusion.html" mime-type="text/html"/>
     <options customize="allow" require-scripts="false" hostArchitectures="x86_64,arm64"/>
@@ -12,12 +12,12 @@
     </choices-outline>
 
     <choice id="vst3" title="VST3 plug-in" description="For Ableton, FL Studio, Reaper, Bitwig, Cubase...">
-        <pkg-ref id="com.dampaudio.shizuka.vst3"/>
+        <pkg-ref id="com.dampaudio.hushchan.vst3"/>
     </choice>
     <choice id="au" title="Audio Unit" description="For Logic Pro and GarageBand.">
-        <pkg-ref id="com.dampaudio.shizuka.au"/>
+        <pkg-ref id="com.dampaudio.hushchan.au"/>
     </choice>
 
-    <pkg-ref id="com.dampaudio.shizuka.vst3" version="__VERSION__" onConclusion="none">Shizuka-VST3.pkg</pkg-ref>
-    <pkg-ref id="com.dampaudio.shizuka.au" version="__VERSION__" onConclusion="none">Shizuka-AU.pkg</pkg-ref>
+    <pkg-ref id="com.dampaudio.hushchan.vst3" version="__VERSION__" onConclusion="none">HushChan-VST3.pkg</pkg-ref>
+    <pkg-ref id="com.dampaudio.hushchan.au" version="__VERSION__" onConclusion="none">HushChan-AU.pkg</pkg-ref>
 </installer-gui-script>

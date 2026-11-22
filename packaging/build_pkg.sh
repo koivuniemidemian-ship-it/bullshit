@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
-# Builds dist/Shizuka-<version>.pkg from the compiled VST3 + AU bundles.
+# Builds dist/HushChan-<version>.pkg from the compiled VST3 + AU bundles.
 #
 # Optional env vars (all may be empty -> unsigned / ad-hoc signed build):
 #   APP_SIGN_ID        "Developer ID Application: Your Name (TEAMID)"
 #   INSTALLER_SIGN_ID  "Developer ID Installer: Your Name (TEAMID)"
-#   ARTEFACTS_DIR      defaults to build/Shizuka_artefacts/Release
+#   ARTEFACTS_DIR      defaults to build/HushChan_artefacts/Release
 set -euo pipefail
 
 VERSION="${1:-0.1.0}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
-ART="${ARTEFACTS_DIR:-$ROOT/build/Shizuka_artefacts/Release}"
+ART="${ARTEFACTS_DIR:-$ROOT/build/HushChan_artefacts/Release}"
 WORK="$ROOT/build/pkg"
 OUT="$ROOT/dist"
-ID_BASE="com.dampaudio.shizuka"
+ID_BASE="com.dampaudio.hushchan"
 
 rm -rf "$WORK"
 mkdir -p "$WORK/vst3root" "$WORK/auroot" "$OUT"
@@ -50,13 +50,13 @@ chmod +x "$HERE/scripts/postinstall"
 pkgbuild --root "$WORK/vst3root" --component-plist "$WORK/vst3.plist" \
   --identifier "$ID_BASE.vst3" --version "$VERSION" \
   --install-location "/Library/Audio/Plug-Ins/VST3" \
-  "$WORK/Shizuka-VST3.pkg"
+  "$WORK/HushChan-VST3.pkg"
 
 pkgbuild --root "$WORK/auroot" --component-plist "$WORK/au.plist" \
   --identifier "$ID_BASE.au" --version "$VERSION" \
   --install-location "/Library/Audio/Plug-Ins/Components" \
   --scripts "$HERE/scripts" \
-  "$WORK/Shizuka-AU.pkg"
+  "$WORK/HushChan-AU.pkg"
 
 sed "s/__VERSION__/$VERSION/g" "$HERE/distribution.xml" > "$WORK/distribution.xml"
 
@@ -67,6 +67,6 @@ productbuild --distribution "$WORK/distribution.xml" \
   --package-path "$WORK" \
   --resources "$HERE/resources" \
   "${SIGN_ARGS[@]+"${SIGN_ARGS[@]}"}" \
-  "$OUT/Shizuka-$VERSION.pkg"
+  "$OUT/HushChan-$VERSION.pkg"
 
-echo "Built $OUT/Shizuka-$VERSION.pkg"
+echo "Built $OUT/HushChan-$VERSION.pkg"

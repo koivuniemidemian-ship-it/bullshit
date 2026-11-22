@@ -6,7 +6,7 @@
 #include <atomic>
 #include <vector>
 
-// SHIZUKA: a one-knob spectral gate. Each FFT bin that falls below the
+// HUSH-CHAN: a one-knob spectral gate. Each FFT bin that falls below the
 // threshold gets pushed down, so noise, room tone and reverb tails vanish
 // while the loud parts stay.
 class ShizukaProcessor : public juce::AudioProcessor

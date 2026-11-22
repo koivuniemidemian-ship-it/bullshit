@@ -747,8 +747,8 @@ void ShizukaEditor::drawPanel (juce::Graphics& g, float k, int mood, float rage)
     const juce::Rectangle<float> title (panel.getX(), 26.0f, panel.getWidth(), 50.0f);
     g.setGradientFill (juce::ColourGradient (mix (Colour (0xffff8fd0), bloodHi, rage), title.getX(), 0.0f,
                                              mix (Colour (0xff7fe8ff), Colour (0xffff7a3a), rage), title.getRight(), 0.0f, false));
-    g.setFont (fontOf (40.0f));
-    g.drawText ("SHIZUKA", title, juce::Justification::centred);
+    g.setFont (fontOf (34.0f));
+    g.drawText ("HUSH-CHAN", title, juce::Justification::centred);
     g.setColour (juce::Colours::white.withAlpha (0.75f));
     g.setFont (fontOf (13.0f, juce::Font::italic));
     g.drawText ("spectral gate", title.translated (0.0f, 36.0f).withHeight (18.0f), juce::Justification::centred);

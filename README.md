@@ -1,4 +1,4 @@
-# SHIZUKA 🤫
+# HUSH-CHAN 🤫
 
 A one-knob **spectral gate** for macOS (VST3 + AU, universal), run by an anime girl who starts out sweet and icy-blue and turns into a blood-soaked yandere as you turn the knob.
 
