@@ -1,0 +1,55 @@
+name: Build Le Goo installer
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "le-goo/**"
+      - ".github/workflows/le-goo.yml"
+    tags: ["le-goo-v*"]
+  pull_request:
+    paths:
+      - "le-goo/**"
+      - ".github/workflows/le-goo.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  macos:
+    runs-on: macos-14
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: le-goo
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache JUCE
+        uses: actions/cache@v4
+        with:
+          path: le-goo/JUCE
+          key: le-goo-juce-8.0.4
+
+      - name: Build VST3 + AU and make the .pkg
+        run: bash "Build Le Goo Installer.command" < /dev/null
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: Le-Goo-Installer
+          path: le-goo/Le Goo Installer.pkg
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: le-goo-build-log
+          path: le-goo/build.log
+
+      - name: Attach to release (le-goo-v* tags only)
+        if: startsWith(github.ref, 'refs/tags/le-goo-v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: le-goo/Le Goo Installer.pkg

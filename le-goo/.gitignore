@@ -1,0 +1,9 @@
+# build output
+build/
+tools/
+JUCE/
+build.log
+*.pkg
+
+# macOS
+.DS_Store
