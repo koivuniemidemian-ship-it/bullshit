@@ -35,6 +35,17 @@ jobs:
       - name: Build VST3 + AU and make the .pkg
         run: bash "Build Le Goo Installer.command" < /dev/null
 
+      - name: Show build errors
+        if: failure()
+        run: |
+          grep -n -E "error:|error [A-Z]|CMake Error|fatal:|✖" build.log | head -40 > errs.txt || true
+          i=0
+          while IFS= read -r line && [ $i -lt 10 ]; do
+            echo "::error title=Le Goo build::${line//$'\r'/}"
+            i=$((i+1))
+          done < errs.txt
+          [ -s errs.txt ] || tail -40 build.log | sed 's/^/::error title=Le Goo build tail::/' | head -10
+
       - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
