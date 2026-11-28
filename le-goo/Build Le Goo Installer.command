@@ -96,15 +96,23 @@ exit 0
 EOS
 chmod +x "$PK/scripts-au/postinstall"
 
+# keep the installer from "relocating" the plugins to some other copy on the disk
 for kind in vst3 au; do
   pkgbuild --analyze --root "$PK/${kind}root" "$PK/$kind.plist" >/dev/null
-  /usr/libexec/PlistBuddy -c "Set :0:BundleIsRelocatable false" "$PK/$kind.plist"
+  if /usr/libexec/PlistBuddy -c "Print :0" "$PK/$kind.plist" >/dev/null 2>&1; then
+    plutil -replace 0.BundleIsRelocatable -bool NO "$PK/$kind.plist"
+  else
+    rm -f "$PK/$kind.plist"
+  fi
 done
+compplist() { [ -f "$PK/$1.plist" ] && printf -- '--component-plist\n%s\n' "$PK/$1.plist"; true; }
+VST3_CP=(); while IFS= read -r l; do VST3_CP+=("$l"); done < <(compplist vst3)
+AU_CP=();   while IFS= read -r l; do AU_CP+=("$l");   done < <(compplist au)
 
-pkgbuild --root "$PK/vst3root" --component-plist "$PK/vst3.plist" \
+pkgbuild --root "$PK/vst3root" "${VST3_CP[@]}" \
   --identifier com.ballhogaudio.legoo.vst3 --version 1.0.0 \
   --install-location "/Library/Audio/Plug-Ins/VST3" "$PK/parts/LeGoo-VST3.pkg"
-pkgbuild --root "$PK/auroot" --component-plist "$PK/au.plist" --scripts "$PK/scripts-au" \
+pkgbuild --root "$PK/auroot" "${AU_CP[@]}" --scripts "$PK/scripts-au" \
   --identifier com.ballhogaudio.legoo.au --version 1.0.0 \
   --install-location "/Library/Audio/Plug-Ins/Components" "$PK/parts/LeGoo-AU.pkg"
 
